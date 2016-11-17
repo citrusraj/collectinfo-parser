@@ -3,7 +3,6 @@ import re
 import os
 import sys
 import shutil
-import configparser
 import string
 import logging
 
