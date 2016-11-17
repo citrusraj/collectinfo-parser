@@ -668,3 +668,4 @@ FILTER_LIST = [
 ]
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
+SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata']
