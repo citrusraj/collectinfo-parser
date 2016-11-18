@@ -185,10 +185,10 @@ def identifyNamespace(content):
         if "Number of" in namespace[i] or "No. " in namespace[i]:
             # End of Section
             break
-        if "~~~~Name" in Namespace[i]:
+        if "~~~~Name" in namespace[i]:
             del1 = True
             continue
-        elif "=== NAME" in Namespace[i]:
+        elif "=== NAME" in namespace[i]:
             del2 = True
             continue
         if del1 or del2:
@@ -818,7 +818,7 @@ def parseAsdversion(content, parsedOutput):
     toolFound = False
     amcFound = False
     verRegex = "[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
-    for dist in {'build rpm', 'build dpkg'}:
+    for dist in ['build rpm', 'build dpkg']:
         if dist in content:
             distro = content[dist][0]
             for i in range(len(distro)):

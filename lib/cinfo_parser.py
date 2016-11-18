@@ -341,9 +341,17 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
 
 def extract_section_from_live_cmd(cmdName, cmdOutput, outmap):
-    outmap[cmdName] = []
+    sectionName = ''
+    for section in FILTER_LIST:
+        if 'cmdName' in section and section['cmdName'] == cmdName:
+            sectionName = section['section']
+    if sectionName == '':
+        logging.warning("Can not find section_name for cmdName: " + cmdName)
+        return
+
+    outmap[sectionName] = []
     outList = cmdOutput.split('\n')
-    outmap[cmdName].append(outList)
+    outmap[sectionName].append(outList)
 
     
 # Cross_validate printconfig section in extracted section json from raw cinfo

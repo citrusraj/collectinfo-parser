@@ -42,6 +42,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'printconfig',
+        'cmdName': 'config',
         'regex_new': "printconfig|\['config'\]",
         'regex_old': '^printconfig\n'
         # 'parser_func'
@@ -73,6 +74,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'latency',
+        'cmdName': 'latency',
         'regex_new': 'latency',
         'regex_old': '^latency\n'
         # 'parser_func'
@@ -81,6 +83,7 @@ FILTER_LIST = [
     #TODO:-----------
         'enable': True,
         'section': 'statistics',
+        'cmdName': 'statistics',
         'regex_new': "^stat\n|\['statistics'\]|\"stat\"",
         'regex_old': '^stat\n'
         # 'parser_func'
@@ -173,14 +176,16 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'uname',
+        'section': 'uname -a',
+        'cmdName': 'uname',
         'regex_new': 'uname -a',
         'regex_old': CMD_PREFIX + 'uname -a'
         # 'parser_func'
     },
     {
         'enable': True,
-        'section': 'lsb_1',
+        'section': 'lsb_release_1',
+        'cmdName': 'lsb',
         'regex_new': 'lsb_release -a',
         'regex_old': CMD_PREFIX + 'lsb_release -a'
         # 'parser_func'
@@ -188,7 +193,8 @@ FILTER_LIST = [
     # Two sections having lsb, they both could occure in file.
     {
         'enable': True,
-        'section': 'lsb_2',
+        'section': 'lsb_release_2',
+        'cmdName': 'lsb',
         'regex_new': 'ls /etc[|]grep release[|]xargs -I f cat /etc/f',
         'regex_old': CMD_PREFIX + 'ls /etc[|]grep release[|]xargs -I f cat /etc/f'
         # 'parser_func'
@@ -258,7 +264,8 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'top',
+        'section': 'top -n3 -b',
+        'cmdName': 'top',
         'regex_new': 'top -n3 -b',
         'regex_old': CMD_PREFIX + 'top -n3 -b'
         # 'parser_func'
@@ -266,6 +273,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'free -m',
+        'cmdName': 'free',
         'regex_new': 'free -m',
         'regex_old': CMD_PREFIX + 'free -m'
         # 'parser_func'
@@ -273,6 +281,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'df -h',
+        'cmdName': 'df',
         'regex_new': 'df -h',
         'regex_old': CMD_PREFIX + 'df -h'
         # 'parser_func'
@@ -364,6 +373,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'info_sindex',
+        'cmdName': 'sindex_info',
         'regex_new': "\['sindex'\]",
         # 'parser_func':
     },
@@ -480,7 +490,8 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'awsdata',
+        'section': 'info_get_awsdata',
+        'cmdName': 'awsdata',
         'regex_new': 'get_awsdata',
         # 'parser_func':
     },
@@ -614,6 +625,7 @@ FILTER_LIST = [
     {
         'enable': True,
         'section': 'meminfo',
+        'cmdName': 'meminfo',
         'regex_new': "cat /proc/meminfo"
         # 'parser_func'
     },
