@@ -9,6 +9,12 @@ import logging
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'sec_par.log', level=logging.INFO)
 
+
+###############################################################################
+########################### Section parser Util func ##########################
+###############################################################################
+
+
 # Assumption - Always a valid number is passed to convert to integer/float
 def strToNumber(number):
     try:
@@ -601,6 +607,11 @@ def getNodeId(string):
         return None
 
 
+###############################################################################
+########################### Main section parser func ##########################
+###############################################################################
+
+
 '''
 1. Check the number of entries in printconfig section.
    More than one entry implies,data generation for printconfig collides with data generation for
@@ -1116,4 +1127,92 @@ def parseMeminfoSection(content, parsedOutput):
             meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
 
     parsedOutput['meminfo_kB'] = meminfodata
+
+
+def parseHostnameSection(content, parsedOutput):
+    logging.info("Parsing hostname section.")
+    hnamedata = {}
+    if not content:
+        logging.warning("Null section json")
+        return
+    if 'hostname' not in content:
+        logging.warning("`hostname` section is not present in section json.")
+        return
+    hnameSectionList = content['hostname']
+
+    if len(hnameSectionList) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section(hostname).")
+        #return
+
+    hnameSection = hnameSectionList[0]
+    for line in hnameSection:
+        if line == '\n' or line == '.' or 'hostname -I' in line:
+            continue
+        else:
+            hnamedata['hostname'] = line.split('\n')[0].split(',')
+            break
+
+    parsedOutput['hostname'] = parsedOutput
+
+
+########################################################################
+################## Wraper func for parsing sections ####################
+########################################################################
+
+
+def parseSysSection(sectionList, content, parsedOutput):
+    logging.info("Parse sys stats.")
+    for section in sectionList:
+        logging.info("Parsing section: " + section)
+
+        if section == 'top':
+            parseTopSection(content, parsedOutput)
+
+        elif section == 'lsb':
+            parseLSBReleaseSection(content, parsedOutput)
+
+        elif section == 'uname':
+            parseUnameSection(content, parsedOutput)
+
+        elif section == 'meminfo':
+            parseMeminfoSection(content, parsedOutput)
+
+        elif section == 'awsdata':
+            parseAWSDataSection(content, parsedOutput)
+        else:
+            logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+
+    logging.info("Converting basic raw string vals to original vals.")
+    typeCheckBasicValues(parsedOutput)
+
+
+def parseAsSection(sectionList, content, parsedOutput):
+    # Parse As stat
+    logging.info("Parse As stats.")
+    nodes = identifyNodes(content)
+    if not nodes:
+        logging.warning("Node can't be identified. Can not parse")
+        return
+
+    for section in sectionList:
+        logging.info("Parsing section: " + section)
+
+        if section == 'statistics':
+            parseStatSection(nodes, content, parsedOutput)
+
+        elif section == 'config':
+            parseConfigSection(nodes, content, parsedOutput)
+
+        elif section == 'latency':
+            parseLatencySection(nodes, content, parsedOutput)
+
+        elif section == 'sindex_info':
+            parseSindexInfoSection(nodes, content, parsedOutput)
+
+        else:
+            logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+
+    logging.info("Converting basic raw string vals to original vals.")
+    typeCheckBasicValues(parsedOutput)
+
 

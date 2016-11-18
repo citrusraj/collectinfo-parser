@@ -19,20 +19,23 @@ COLLECTINFO_START_LINE_MAX = 4
 SECTION_DETECTION_LINE_MAX = 2
 MIN_SECTIONS_IN_COLLECT_INFO = 2
 
+FILTER_LIST = section_filter_list.FILTER_LIST
+SKIP_LIST = section_filter_list.SKIP_LIST
+
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'cinfo_par.log', level=logging.INFO)
 
 # Remove disabled filter section from result dictionary.
-# Param outMap: Dictionary having parsed section entries.
-# Param section_filter_list: Parsed section filter list.
-def filter_processed_cinfo(outMap, section_filter_list):
+# Param outmap: Dictionary having parsed section entries.
+# Param filter_list: Parsed section filter list.
+def filter_processed_cinfo(outmap, filter_list):
     logging.info("Removing disabled filter section...")
-    for index, filter_obj in enumerate(section_filter_list):
+    for index, filter_obj in enumerate(filter_list):
         if filter_obj['enable'] is False:
             # Remove that key from map
             try:
-                logging.debug("Removing filter section from outMap: " + str(filter_obj['section']))
-                del outMap[filter_obj['section']]
+                logging.debug("Removing filter section from outmap: " + str(filter_obj['section']))
+                del outmap[filter_obj['section']]
             except KeyError:
                 pass
 
@@ -66,12 +69,12 @@ def is_delimiter_collectinfo(path, delimiter):
 # Param newcinfo: collectinfo file
 # Param key: key to be added in Map
 # Param value: value to be added in map
-# Param outMap: Map having parsed sections
-def updateMap(newcinfo, key, value, outMap, skip_list, force):
+# Param outmap: Map having parsed sections
+def updateMap(newcinfo, key, value, outmap, skip_list, force):
     vallist = []
     same_section = False
-    if key in outMap.keys():
-        preval = outMap[key]
+    if key in outmap.keys():
+        preval = outmap[key]
         logging.warning("There is a collision for section: " + key)
         if newcinfo:
             # Skip section which are repeated in collectinfo with some variable name.
@@ -94,45 +97,57 @@ def updateMap(newcinfo, key, value, outMap, skip_list, force):
 
     # This would append all colliding section in a list
     vallist.append(value)
-    outMap[key] = vallist
+    outmap[key] = vallist
 
+def extract_validate_filter_section_from_file(filepath, outmap, force):
+    filter_list = FILTER_LIST
+    logging.info("Creating section json. parse, validate, filter sections.")
+    parse_all = True
+    section_count = extract_section_from_file(filepath, parse_all, outmap, force)
+    validateSectionCount(section_count, outmap, force)
+    filter_processed_cinfo(outmap, filter_list)
 
-def extract_section_from_file(filepath, section_filter_list, skip_list, parse_all, outMap, force):
+def extract_section_from_file(filepath, parse_all, outmap, force):
+    logging.info("Extract sections from collectinfo file.")
     delimit = SECTION_DELIMITER
     delimit_regx = DELIMIT_REGEX
     non_delimit_regx = NON_DELIMIT_REGEX
+    filter_list = FILTER_LIST
+    skip_list = SKIP_LIST
 
     if not os.path.exists(filepath):
         logging.warning("collectinfo doesn't exist at path: " + filepath)
         return 0
 
     if is_delimiter_collectinfo(filepath, delimit):
-        logging.debug("New collectinfo version delimit 'ASCOLLECTINFO': " + filepath)
+        logging.info("New collectinfo version delimit 'ASCOLLECTINFO': " + filepath)
         section_count = section_count_fun(filepath, delimit)
-        extract_section_from_new_cinfo(filepath, section_filter_list, skip_list, delimit_regx, delimit, parse_all, outMap, force)
+        extract_section_from_new_cinfo(filepath, filter_list, skip_list, delimit_regx, delimit, parse_all, outmap, force)
+        logging.info("Total sections: " + str(section_count) + "outmap sec: " + str(len(outmap)))
     else:
-        logging.debug("Old collectinfo version: " + filepath)
-        extract_section_from_old_cinfo(filepath, section_filter_list, skip_list, non_delimit_regx, outMap, force)
+        logging.info("Old collectinfo version: " + filepath)
+        extract_section_from_old_cinfo(filepath, filter_list, skip_list, non_delimit_regx, outmap, force)
 
     return section_count
 
 
-def validateSectionCount(section_count, outMap):
-    # Validate no of section in outMap
+def validateSectionCount(section_count, outmap, force):
+    # Validate no of section in outmap
     if section_count != 0:
-        outMap_sections = 0
-        for key in outMap:
-            outMap_sections += len(outMap[key])
+        outmap_sections = 0
+        for key in outmap:
+            outmap_sections += len(outmap[key])
 
-        logging.debug("outMap_sec: " + str(outMap_sections) + "section_count: " + str(section_count) + " attachment: " + attachment)
-        if outMap_sections != section_count:
+        logging.debug("outmap_sec: " + str(outmap_sections) + "section_count: " + str(section_count))
+        if outmap_sections != section_count:
             logging.error("Something wrong, no of section in file and no of extracted are not matching")
-            logging.error("outMap_sec: " + str(outMap_sections) + "section_count: " + str(section_count))
-            raise Exception("Extracted section count is not matching with section count in file.")
+            logging.error("outmap_sec: " + str(outmap_sections) + "section_count: " + str(section_count))
+            if not force:
+                raise Exception("Extracted section count is not matching with section count in file.")
 
 
 # Extract sections from old collectinfo files
-def extract_section_from_old_cinfo(cinfo_path, section_filter_list, skip_list, regex, outMap, force):
+def extract_section_from_old_cinfo(cinfo_path, filter_list, skip_list, regex, outmap, force):
     logging.info("Processing old collectinfo: " + cinfo_path)
     new_cinfo = False
     # Check if cinfo file doesn't exist in given path
@@ -157,18 +172,18 @@ def extract_section_from_old_cinfo(cinfo_path, section_filter_list, skip_list, r
                 continue
             is_filter_line = False
 
-            for index, filter_obj in enumerate(section_filter_list):
+            for index, filter_obj in enumerate(filter_list):
 
                 # Check if this filter doesn't have regex of same version as collectinfo.
                 if regex not in filter_obj:
                     continue
 
                 # Check if its EOF or filter line
-                # Update outMap
+                # Update outmap
                 # Break if its EOF
                 if fileline == '' or re.search(filter_obj[regex], fileline):
                     if filter_sec != '':
-                        updateMap(new_cinfo, filter_sec, datastr, outMap, skip_list, force)
+                        updateMap(new_cinfo, filter_sec, datastr, outmap, skip_list, force)
                         datastr = []
                     if fileline == '':
                         break
@@ -214,7 +229,7 @@ def section_count_fun(cinfo_path, delimiter):
 # Correct the logic that if next section starts before 2 lines and section not detected. it should throw error,
 # Update section name everytime a delimiter line hits, or something else whatever could be done. fix logic
 # Extract sections from new collectinfo files, having delimiter.
-def extract_section_from_new_cinfo(cinfo_path, section_filter_list, skip_list, regex, delimiter, parse_all, outMap, force):
+def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, delimiter, parse_all, outmap, force):
     logging.info("Processing new collectinfo: " + cinfo_path)
     new_cinfo = True
     parse_section = 0
@@ -268,12 +283,12 @@ def extract_section_from_new_cinfo(cinfo_path, section_filter_list, skip_list, r
                         if((section_line == '' or re.search(delimiter, section_line))):
                         
                             if parse_all or (filter_sec is not 'Unknown'):
-                                updateMap(new_cinfo, filter_sec, datastr, outMap, skip_list, force)
+                                updateMap(new_cinfo, filter_sec, datastr, outmap, skip_list, force)
                                 parse_section += parse_section
 
                                 # All section from filter_list is parsed and parse_all has been set false
                                 # So exit.
-                                if not parse_all and parse_section >= len(section_filter_list):
+                                if not parse_all and parse_section >= len(filter_list):
                                     eof = True
                                     break
 
@@ -295,7 +310,7 @@ def extract_section_from_new_cinfo(cinfo_path, section_filter_list, skip_list, r
 
                         # Check for only two lines after delimiter for filter line
                         if index <= SECTION_DETECTION_LINE_MAX and known is False:
-                            for f_index, filter_obj in enumerate(section_filter_list):
+                            for f_index, filter_obj in enumerate(filter_list):
 
                                 # Check if this filter doesn't have regex of same version as collectinfo.
                                 if regex not in filter_obj:
@@ -324,6 +339,11 @@ def extract_section_from_new_cinfo(cinfo_path, section_filter_list, skip_list, r
                     break
 
 
+
+def extract_section_from_live_cmd(cmd_name, cmdOutput, outmap):
+    outList = cmdOutput.split('\n')
+    outmap[cmdName] = [outList]
+    
 # Cross_validate printconfig section in extracted section json from raw cinfo
 def cross_validation_printconfig(cinfo_path):
     logging.info("Cross-validating printconfig")
