@@ -173,14 +173,14 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'uname -a',
+        'section': 'uname',
         'regex_new': 'uname -a',
         'regex_old': CMD_PREFIX + 'uname -a'
         # 'parser_func'
     },
     {
         'enable': True,
-        'section': 'lsb_release_1',
+        'section': 'lsb_1',
         'regex_new': 'lsb_release -a',
         'regex_old': CMD_PREFIX + 'lsb_release -a'
         # 'parser_func'
@@ -188,7 +188,7 @@ FILTER_LIST = [
     # Two sections having lsb, they both could occure in file.
     {
         'enable': True,
-        'section': 'lsb_release_2',
+        'section': 'lsb_2',
         'regex_new': 'ls /etc[|]grep release[|]xargs -I f cat /etc/f',
         'regex_old': CMD_PREFIX + 'ls /etc[|]grep release[|]xargs -I f cat /etc/f'
         # 'parser_func'
@@ -258,7 +258,7 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'top -n3 -b',
+        'section': 'top',
         'regex_new': 'top -n3 -b',
         'regex_old': CMD_PREFIX + 'top -n3 -b'
         # 'parser_func'
@@ -480,7 +480,7 @@ FILTER_LIST = [
     },
     {
         'enable': True,
-        'section': 'info_get_awsdata',
+        'section': 'awsdata',
         'regex_new': 'get_awsdata',
         # 'parser_func':
     },
