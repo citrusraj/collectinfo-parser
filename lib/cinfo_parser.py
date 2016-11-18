@@ -341,8 +341,10 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
 
 def extract_section_from_live_cmd(cmd_name, cmdOutput, outmap):
+    outmap[cmdName] = []
     outList = cmdOutput.split('\n')
-    outmap[cmdName] = [outList]
+	outmap[cmdName].append(outList)
+
     
 # Cross_validate printconfig section in extracted section json from raw cinfo
 def cross_validation_printconfig(cinfo_path):
