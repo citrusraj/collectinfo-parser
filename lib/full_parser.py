@@ -52,8 +52,8 @@ def parseSysStatsCinfo(filepath, parsedOutput, sectionList, force = False):
 
 def parseSysStatsLiveCmd(cmdName, cmdOutput, parsedOutput):
 	# Parse live cmd output and create outmap
-	outmap = {}
-	extract_section_from_live_cmd(cmdName, cmdOutput, outmap)
+    outmap = {}
+    cinfo_parser.extract_section_from_live_cmd(cmdName, cmdOutput, outmap)
 
-	section_parser.parseSysSection(sectionList, outmap, parsedOutput)
+    section_parser.parseSysSection(sectionList, outmap, parsedOutput)
 
