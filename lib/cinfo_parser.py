@@ -27,15 +27,16 @@ SKIP_LIST = section_filter_list.SKIP_LIST
 
 # Remove disabled filter section from result dictionary.
 # Param outmap: Dictionary having parsed section entries.
-# Param filter_list: Parsed section filter list.
+# Param filter_list: Parsed section filter map.
 def filter_processed_cinfo(outmap, filter_list):
     logging.info("Removing disabled filter section...")
-    for index, filter_obj in enumerate(filter_list):
+    for key in filter_list:
+        filter_obj = filter_list[key]
         if filter_obj['enable'] is False:
             # Remove that key from map
             try:
-                logging.debug("Removing filter section from outmap: " + str(filter_obj['section']))
-                del outmap[filter_obj['section']]
+                logging.debug("Removing filter section from outmap: " + str(filter_obj['raw_section_name']))
+                del outmap[filter_obj['raw_section_name']]
             except KeyError:
                 pass
 
@@ -172,7 +173,8 @@ def extract_section_from_old_cinfo(cinfo_path, filter_list, skip_list, regex, ou
                 continue
             is_filter_line = False
 
-            for index, filter_obj in enumerate(filter_list):
+            for key in filter_list:
+                filter_obj = filter_list[key]
 
                 # Check if this filter doesn't have regex of same version as collectinfo.
                 if regex not in filter_obj:
@@ -187,7 +189,7 @@ def extract_section_from_old_cinfo(cinfo_path, filter_list, skip_list, regex, ou
                         datastr = []
                     if fileline == '':
                         break
-                    filter_sec = filter_obj['section']
+                    filter_sec = filter_obj['raw_section_name']
                     is_filter_line = True
                     break
 
@@ -287,7 +289,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                                 parse_section += parse_section
 
                                 # All section from filter_list is parsed and parse_all has been set false
-                                # So exit.
+                                # So exit. Here filter_list could be subset, not all cinfo sections.
                                 if not parse_all and parse_section >= len(filter_list):
                                     eof = True
                                     break
@@ -310,8 +312,8 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
                         # Check for only two lines after delimiter for filter line
                         if index <= SECTION_DETECTION_LINE_MAX and known is False:
-                            for f_index, filter_obj in enumerate(filter_list):
-
+                            for key in filter_list:
+                                filter_obj = filter_list[key]
                                 # Check if this filter doesn't have regex of same version as collectinfo.
                                 if regex not in filter_obj:
                                     continue
@@ -319,7 +321,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                                 if re.search(filter_obj[regex], section_line):
                                     known = True
                                     parse_section += parse_section
-                                    filter_sec = filter_obj['section']
+                                    filter_sec = filter_obj['raw_section_name']
                                     break
 
                         # Append line in datastr
@@ -342,9 +344,10 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
 def extract_section_from_live_cmd(cmdName, cmdOutput, outmap):
     sectionName = ''
-    for section in FILTER_LIST:
-        if 'cmdName' in section and section['cmdName'] == cmdName:
-            sectionName = section['section']
+    for key in FILTER_LIST:
+        section = FILTER_LIST[key]
+        if 'final_section_name' in section and section['final_section_name'] == cmdName:
+            sectionName = section['raw_section_name']
     if sectionName == '':
         logging.warning("Can not find section_name for cmdName: " + cmdName)
         return

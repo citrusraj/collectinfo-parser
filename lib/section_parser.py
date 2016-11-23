@@ -2,17 +2,44 @@ import json
 import re
 import os
 import sys
+import math
 import shutil
 import string
 import logging
+import section_filter_list
 
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'sec_par.log', level=logging.INFO)
-
+FILTER_LIST = section_filter_list.FILTER_LIST
 
 ###############################################################################
 ########################### Section parser Util func ##########################
 ###############################################################################
+
+def getSectionNameFromId(sec_id):
+    raw_section_name = FILTER_LIST[sec_id]['raw_section_name']
+    final_section_name = FILTER_LIST[sec_id]['final_section_name'] if 'final_section_name' in FILTER_LIST[sec_id] else ''
+    return raw_section_name, final_section_name
+    
+
+def getByteMemFromStr(mem, suflen):
+    if 'k' in mem or 'K' in mem:
+        return getBytesFromFloat(mem, 10, suflen)
+    elif 'm' in mem or 'M' in mem:
+        return getBytesFromFloat(mem, 20, suflen)
+    elif 'g' in mem or 'G' in mem:
+        return getBytesFromFloat(mem, 30, suflen)
+    elif 't' in mem or 'T' in mem:
+        return getBytesFromFloat(mem, 40, suflen)
+    else:
+        return mem
+
+def getBytesFromFloat(mem, shift, suflen):
+    memnum = float(mem[:-suflen])
+    f, i = math.modf(memnum)
+    num = int(i) << shift
+    totalmem =  num + int((num/i)*f)
+    return totalmem
 
 
 # Assumption - Always a valid number is passed to convert to integer/float
@@ -40,7 +67,8 @@ def isBool(val):
 
 def typeCheckRawAll(nodes, sectionName, parsedOutput):
     for node in nodes:
-        typeCheckFieldAndRawValues(parsedOutput[node][sectionName])
+        if sectionName in parsedOutput[node]:
+            typeCheckFieldAndRawValues(parsedOutput[node][sectionName])
 
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
@@ -54,7 +82,8 @@ def typeCheckFieldAndRawValues(section):
         elif isinstance(section[key], list) and len(section[key]) > 0 and isinstance(section[key][0], dict):
             for item in section[key]:
                 typeCheckFieldAndRawValues(item)
-        else:
+        
+        elif isinstance(section[key], str):
             if type(section[key]) is int or type(section[key]) is bool or type(section[key]) is list:
                 continue
             elif section[key] is None:
@@ -99,12 +128,13 @@ def typeCheckFieldAndRawValues(section):
                 if num.isdigit():
                     number = strToNumber(num)
                     section[key] = -1 * number
-            # else:
-            #   logging.info(section[key])
+
+        # continue for all int, float and bools
+        else:
+            continue
+
     for key in keys:
         section.pop(key, None)
-
-
 
 
 # This should check only raw values.
@@ -116,10 +146,12 @@ def typeCheckBasicValues(section):
     for key in section:
         if isinstance(section[key], dict):
             typeCheckBasicValues(section[key])
+
         elif isinstance(section[key], list) and len(section[key]) > 0 and isinstance(section[key][0], dict):
             for item in section[key]:
                 typeCheckBasicValues(item)
-        else:
+
+        elif isinstance(section[key], str):
             if '.' in key:
                 malformedkeys.append(key)
             if type(section[key]) is int or type(section[key]) is bool or type(section[key]) is list:
@@ -146,14 +178,16 @@ def typeCheckBasicValues(section):
                 if num.isdigit():
                     number = strToNumber(num)
                     section[key] = -1 * number
-            # else:
-            #   logging.info(section[key])
+
+        # continue for all int, float and bools
+        else:
+            continue
+
     for key in malformedkeys:
         newkey = key.replace('.', '_')
         val = section[key]
         section.pop(key, None)
         section[newkey] = val
-
 
 
 
@@ -170,13 +204,17 @@ def getClusterSize(stats):
 
 
 def identifyNamespace(content):
-    if 'Namespace' not in content:
-        logging.warning("Latency is not present in file")
+    sec_id = 'ID_2'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
         return
-    if len(content['Namespace']) > 1:
-        logging.warning("Namespace section has more than one entries, collision occured")
-    
-    namespace = content['Namespace'][0]
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+
+    namespace = content[raw_section_name][0]
     del1 = False
     del2 = False
     nsList = []
@@ -185,10 +223,10 @@ def identifyNamespace(content):
         if "Number of" in namespace[i] or "No. " in namespace[i]:
             # End of Section
             break
-        if "~~~~Name" in namespace[i]:
+        if "~~~~Name" in Namespace[i]:
             del1 = True
             continue
-        elif "=== NAME" in namespace[i]:
+        elif "=== NAME" in Namespace[i]:
             del2 = True
             continue
         if del1 or del2:
@@ -222,13 +260,17 @@ def identifyNodes(content):
 
 
 def getNodesFromLatencyInfo(content):
-    if 'latency' not in content:
-        logging.warning("Latency is not present in file")
+    sec_id = 'ID_10'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
-    if len(content['latency']) > 1:
-        logging.warning("Latency section has more than one entries, collision occured")
-    
-    latency = content['latency'][0]
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+
+    latency = content[raw_section_name][0]
     delimiterCount = 0
     nodes = []
     for i in range(len(latency)):
@@ -261,13 +303,17 @@ def getNodesFromLatencyInfo(content):
             continue
 
 def getNodesFromNetworkInfo(content):
-    if 'info_network' not in content:
-        logging.warning("info_network is not present in file")
-        return
-    if len(content['info_network']) > 1:
-        logging.warning("info_network section has more than one entries, collision occured")
+    sec_id = 'ID_49'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
 
-    network_info = content['info_network'][0]
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+
+    network_info = content[raw_section_name][0]
     del_found = False
     nodes = []
     skip_lines = 2
@@ -612,105 +658,94 @@ def getNodeId(string):
 ###############################################################################
 
 
-'''
-1. Check the number of entries in printconfig section.
-   More than one entry implies,data generation for printconfig collides with data generation for
-   another section during section parsing phase.
-   Fail the parsing it has multiple entries.
-2. Identify number of nodes in the cluster. 
-   Stat section has a cluster_size parameter. Look up the value to get cluster size.
-   If stat is not present, how to get cluster size reliably = ?.
-   While parsing data for every node, make sure total number of nodes processed is equal to cluster size.
-   Why more than one way to find cluster - in order to be self validating.
-   In some cases ClusterSize is different in stat's entry for nodes ( split cluster scenarios)
-
-'''
-
-
 def parseConfigSection(nodes, content, parsedOutput):
-    logging.info("Parsing config section.")
+    sec_id = 'ID_5'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
-        logging.warning("Null section json.")
+        logging.warning("Null section json")
         return
 
-    sectionName = "config"
-    if 'printconfig' not in content:
-        logging.warning("printconfig section is not present in section json.")
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
 
-    if len(content['printconfig']) > 1:
-        logging.warning("Print Config has more than one entry, implying printconfig section collides with unknown section")
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    configSection = content[raw_section_name][0]
 
     logging.debug("invoking format identifier")
-    singleColumn = isSingleColumnFormat(content['printconfig'][0])
+    singleColumn = isSingleColumnFormat(configSection)
 
-
-    initNodesForParsedJson(nodes, content, parsedOutput, sectionName)
+    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
     
     if singleColumn:
-        parseSingleColumnFormat(content['printconfig'][0], parsedOutput, 'config')
+        parseSingleColumnFormat(configSection, parsedOutput, final_section_name)
     else:
-        parseMultiColumnFormat(content['printconfig'][0], parsedOutput, 'config')
-
-    typeCheckRawAll(nodes, sectionName, parsedOutput)
+        parseMultiColumnFormat(configSection, parsedOutput, final_section_name)
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseStatSection(nodes, content, parsedOutput):
-    logging.info("Parsing stat section.")
+    sec_id = 'ID_11'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
-        logging.warning("Null section json.")
+        logging.warning("Null section json")
         return
 
-    sectionName = 'statistics'
-    if 'statistics' not in content:
-        # updateStatsError(content)
-        logging.warning("statistics section is not present in section json.")
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
 
-    if len(content['statistics']) > 1:
-        logging.warning("Stat has more than one entry, implies collision of entries")
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    statSection = content[raw_section_name][0]
+    
+    logging.debug("invoking format identifier")
+    singleColumn = isSingleColumnFormat(statSection)
 
-    logging.info("invoking format identifier")
-    singleColumn = isSingleColumnFormat(content['statistics'][0])
-
-    initNodesForParsedJson(nodes, content, parsedOutput, sectionName)
+    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
     
     if singleColumn:
-        parseSingleColumnFormat(content['statistics'][0], parsedOutput, 'statistics')
+        parseSingleColumnFormat(statSection, parsedOutput, final_section_name)
     else:
-        parseMultiColumnFormat(content['statistics'][0], parsedOutput, 'statistics')
-
-    typeCheckRawAll(nodes, sectionName, parsedOutput)
-
-
+        parseMultiColumnFormat(statSection, parsedOutput, final_section_name)
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseLatencySection(nodes, content, parsedOutput):
+    sec_id = 'ID_10'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
-        logging.warning("Null section json.")
+        logging.warning("Null section json")
         return
 
-    sectionName = 'latency'
-    if sectionName not in content:
-        logging.warning("latency stat section is not present in section json.")
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
     
-    if len(content['latency']) > 1:
-        logging.warning("Latency has more than one entry, implies collision of entries")
-        logging.warning("Filepath for latency collision.")
-    
-    latency = content['latency'][0]
+    latency = content[raw_section_name][0]
     length = len(latency)
     histogram = ''
 
-    initNodesForParsedJson(nodes, content, parsedOutput, sectionName) 
+    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name) 
 
     for i in range(length):
         if "====" in latency[i] or "~~~~" in latency[i]:
             histogram = getHistogramName(latency[i])
             logging.info("Histogram name: " + histogram)
             for key in parsedOutput:
-                parsedOutput[key]['latency'][histogram] = {}
+                parsedOutput[key][final_section_name][histogram] = {}
         elif 'time' in latency[i].lower():
             keys = getHistogramKeys(latency[i])
         else:
@@ -728,37 +763,37 @@ def parseLatencySection(nodes, content, parsedOutput):
                     else:
                         for i in range(len(values)):
                             if nodeId in parsedOutput:
-                                parsedOutput[nodeId]['latency'][histogram][keys[i]] = values[i]
+                                parsedOutput[nodeId][final_section_name][histogram][keys[i]] = values[i]
                 elif values is None:
                     if len(latency[i]) > 2:
                         logging.warning("getHistogram keys returned a NULL set for keys " + str(latency[i]))
                     else:
                         logging.debug("latency section contains an empty string")
-    typeCheckRawAll(nodes, sectionName, parsedOutput)
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+
 
 def parseSindexInfoSection(nodes, content, parsedOutput):
-    logging.info("Parsing info_sindex section.")
-    sindexdata = {}
+    sec_id = 'ID_51'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
         logging.warning("Null section json")
         return
-    
-    sectionName = 'sindex_info'
 
-    if 'info_sindex' not in content:
-        logging.warning("`info_sindex` section is not present in section json.")
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
 
-    sindexSectionList = content['info_sindex']
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+    
+    
+    sindexdata = {}
+    sindexSection = content[raw_section_name][0]
 
-    initNodesForParsedJson(nodes, content, parsedOutput, sectionName)
-
-    if len(sindexSectionList) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section(info_sindex).")
-        #return
-
-    sindexSection = sindexSectionList[0]
-
+    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
+    
     # Get the starting of data
     # "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Secondary Index Information~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
     # "               Node          Index       Namespace         Set       Bin   State     Sync     Keys     Objects   si_accounted_memory     q           w          d       s   \n"
@@ -780,39 +815,53 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
         nodeId = l[0]
         if nodeId not in sindexdata:
             sindexdata[nodeId] = {}
-            sindexdata[nodeId]['sindex_info'] = {}
-            sindexdata[nodeId]['sindex_info']['index'] = []
+            sindexdata[nodeId][final_section_name] = {}
+            sindexdata[nodeId][final_section_name]['index'] = []
         indexObj = {}
-        indexObj['IndexName'] = l[1]
-        indexObj['Namespace'] = l[2]
-        indexObj['Set'] = l[3]
-        indexObj['BinType'] = l[4]
-        indexObj['State'] = l[5]
-        indexObj['SyncState'] = l[6]
+        indexObj['index_name'] = l[1]
+        indexObj['namespace'] = l[2]
+        indexObj['set'] = l[3]
+        indexObj['bin_type'] = l[4]
+        indexObj['state'] = l[5]
+        indexObj['sync_state'] = l[6]
         # Extra added info, previously not there.
         if len(l) > 8:
-            indexObj['Keys'] = l[7]
-            indexObj['Objects'] = l[8]
-            indexObj['SI_accounted_memory'] = l[9]
-        sindexdata[nodeId]['sindex_info']['index'].append(indexObj)
+            indexObj['keys'] = l[7]
+            indexObj['objects'] = l[8]
+            indexObj['si_accounted_memory'] = l[9]
+        sindexdata[nodeId][final_section_name]['index'].append(indexObj)
 
     # Update sindex count for respective nodes.
     for nodeId in sindexdata:
-        sindexdata[nodeId]['sindex_info']['index_count'] = len(sindexdata[nodeId]['sindex_info']['index'])
+        sindexdata[nodeId][final_section_name]['index_count'] = len(sindexdata[nodeId][final_section_name]['index'])
         if nodeId in parsedOutput:
-            parsedOutput[nodeId]['sindex_info'] = sindexdata[nodeId]['sindex_info']
+            parsedOutput[nodeId][final_section_name] = sindexdata[nodeId][final_section_name]
         else:
             logging.info("Node id not in nodes section: " + nodeId)
 
-    typeCheckRawAll(nodes, sectionName, parsedOutput)
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseAsdversion(content, parsedOutput):
+    sec_id_1 = 'ID_27'
+    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
+
+    sec_id_2 = 'ID_28'
+    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+
+    logging.info("Parsing section: " + final_section_name_1)
     if not content:
-        logging.warning("NUll section json.")
-    if 'build rpm' not in content and 'build dpkg' not in content:
-        logging.warning("Asd version section rpm/dpkg is not present in section json.")
+        logging.warning("Null section json")
         return
+
+    if raw_section_name_1 not in content and raw_section_name_2 not in content:
+        logging.warning(raw_section_name_1 + " and " + raw_section_name_1 + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
     distro = {}
     distroFound = False
     toolFound = False
@@ -852,38 +901,44 @@ def parseAsdversion(content, parsedOutput):
         logging.warning("Asd Version string not present in JSON.")
 
     
-
+# output: {in_aws: AAA, instance_type: AAA}
 def parseAWSDataSection(content, parsedOutput):
-    logging.info("Parsing `info_get_awsdata` or `Request metadata` section.")
+    sec_id_1 = 'ID_70'
+    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
+
+    sec_id_2 = 'ID_85'
+    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+
+    logging.info("Parsing section: " + final_section_name_1)
+    if not content:
+        logging.warning("Null section json")
+        return
+
     awsdata = {}
     field_count = 0
     total_fields = 2
-    if not content:
-        logging.warning("Null section json.")
-        return
     #if 'info_get_awsdata' not in content and 'Request metadata' not in content:
     #    logging.warning("`info_get_awsdata` or `Request metadata` section is not present in section json " + str(filepath))
     #    return
 
     awsSectionList = None
     # If both sections are present, select which has more number of lines.
-    if 'info_get_awsdata' in content and 'Request metadata' in content:
-        if len(content['info_get_awsdata']) > len(content['Request metadata']):
-            awsSectionList = content['info_get_awsdata']
+    if raw_section_name_1 in content and raw_section_name_2 in content:
+        if len(content[raw_section_name_1]) > len(content[raw_section_name_2]):
+            awsSectionList = content[raw_section_name_1]
         else:
-            awsSectionList = content['Request metadata']
+            awsSectionList = content[raw_section_name_2]
 
-    elif 'info_get_awsdata' in content:
-        awsSectionList = content['info_get_awsdata']
-    elif 'Request metadata' in content:
-        awsSectionList = content['Request metadata']
+    elif raw_section_name_1 in content:
+        awsSectionList = content[raw_section_name_2]
+    elif raw_section_name_2 in content:
+        awsSectionList = content[raw_section_name_2]
     else:
-        logging.warning("`info_get_awsdata` or `Request metadata` section is not present in section json.")
+        logging.warning(raw_section_name_1 + " and " + raw_section_name_2 + " section is not present in section json.")
         return
 
     if len(awsSectionList) > 1:
         logging.warning("More than one entries detected, There is a collision for this section(aws_info).")
-        #return
 
     awsSection = awsSectionList[0]
 
@@ -891,36 +946,42 @@ def parseAWSDataSection(content, parsedOutput):
         if field_count >= total_fields:
             break
         if 'inAWS' not in awsdata and re.search("This .* in AWS", line, re.IGNORECASE):
-            awsdata['inAWS'] = True
+            awsdata['in_aws'] = True
             field_count += 1
             continue
         if 'inAWS' not in awsdata and re.search("not .* in aws", line, re.IGNORECASE):
-            awsdata['inAWS'] = False
+            awsdata['in_aws'] = False
             field_count += 1
             continue
         if 'instance_type' not in awsdata and re.search("instance-type", line):
             awsdata['instance_type'] = (awsSection[index + 1]).split('\n')[0]
             field_count += 1
             if 'inAWS' not in awsdata:
-                awsdata['inAWS'] = True
+                awsdata['in_aws'] = True
                 field_count += 1
             continue
-
-    parsedOutput['awsdata'] = awsdata
-
+    parsedOutput[final_section_name_1] = awsdata
 
 
 def parseLSBReleaseSection(content, parsedOutput):
-    lsbdata = {}
+    sec_id_1 = 'ID_25'
+    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
 
+    sec_id_2 = 'ID_26'
+    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+
+
+    logging.info("Parsing section: " + final_section_name_1)
     if not content:
-        logging.warning("Null section json.")
-        return
-    if 'lsb_release_1' not in content and 'lsb_release_2' not in content:
-        logging.warning("`lsb_release` section is not present in section json ")
+        logging.warning("Null section json")
         return
 
-    lsbSectionNames = ['lsb_release_1', 'lsb_release_2']
+    if raw_section_name_1 not in content and raw_section_name_2 not in content:
+        logging.warning(raw_section_name_1 + " and " + raw_section_name_1 + " section not present.")
+        return
+
+    lsbdata = {}
+    lsbSectionNames = [raw_section_name_1, raw_section_name_2]
     for section in lsbSectionNames:
         lsbSectionList = None
         if section in content:
@@ -930,7 +991,7 @@ def parseLSBReleaseSection(content, parsedOutput):
             continue
 
         if len(lsbSectionList) > 1:
-            logging.warning("More than one entries detected, There is a collision for this section(lsb_release).")
+            logging.warning("More than one entries detected, There is a collision for this section: " + section)
             ##return
 
         lsbSection = lsbSectionList[0]
@@ -943,7 +1004,7 @@ def parseLSBReleaseSection(content, parsedOutput):
             # "Description:\tCentOS release 6.4 (Final)\n"
             matchobj = re.match(r'Description:\t(.*?)\n', line)
             if matchobj:
-                lsbdata['Description'] = matchobj.group(1)
+                lsbdata['description'] = matchobj.group(1)
                 break
             # "['lsb_release -a']\n"
             # "['ls /etc|grep release|xargs -I f cat /etc/f']\n"
@@ -951,39 +1012,46 @@ def parseLSBReleaseSection(content, parsedOutput):
             # "Red Hat Enterprise Linux Server release 6.7 (Santiago)\n"
             # "CentOS release 6.7 (Final)\n"
             if re.search('.* release [0-9]+', line):
-                lsbdata['Description'] = line.split('\n')[0]
+                lsbdata['description'] = line.split('\n')[0]
                 break
             # Few formats have only PRETTY_NAME, so need to add this condition.
             # "PRETTY_NAME=\"Ubuntu 14.04.2 LTS\"\n"
             matchobj = re.match(r'PRETTY_NAME=\"(.*?)\"\n', line)
             if matchobj:
-                lsbdata['Description'] = matchobj.group(1)
+                lsbdata['description'] = matchobj.group(1)
                 break
-    parsedOutput['lsb_release'] = lsbdata
+    parsedOutput[final_section_name_1] = lsbdata
 
 
 def parseTopSection(content, parsedOutput):
-    logging.warning("Parsing `top -n3` section.")
-    topdata = {'Uptime': {}, 'Tasks': {}, 'Cpu_utilization': {}, 'RAM_KiB': {}, 'Swap_KiB': {}, 'asd_process': {}, 'xdr_process': {}}
+    sec_id = 'ID_36'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
         logging.warning("Null section json")
         return
-    if 'top -n3 -b' not in content:
-        logging.warning("`top -n3 -b` section is not present in section json ")
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
-    topSectionList = content['top -n3 -b']
 
-    if len(topSectionList) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section(top -n3).")
-        #return
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
 
-    topSection = topSectionList[0]
+    topdata = {'uptime': {}, 'tasks': {}, 'cpu_utilization': {}, 'ram': {}, 'swap': {}, 'asd_process': {}, 'xdr_process': {}}
+    topSection = content[raw_section_name][0]
     asd_flag = False
     xdr_flag = False
+    kib_format = False
     for index, line in enumerate(topSection):
         line = line.strip()
         if re.search('top -n3 -b', line):
             continue
+
+        if 'KiB' in line:
+            kib_format = True
 
         # Match object to get uptime in days.
         # "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
@@ -1002,30 +1070,30 @@ def parseTopSection(content, parsedOutput):
         matchobj_5 = re.match(r'.*Swap:.* (.*?) total.* (.*?) used.* (.*?) free.* (.*?) cached.*', line)
 
         if matchobj_1:
-            topdata['Uptime']['days'] = matchobj_1.group(1)
+            topdata['uptime']['days'] = matchobj_1.group(1)
         elif matchobj_2:
-            topdata['Tasks']['total'] = matchobj_2.group(1)
-            topdata['Tasks']['running'] = matchobj_2.group(2)
-            topdata['Tasks']['sleeping'] = matchobj_2.group(3)
+            topdata['tasks']['total'] = matchobj_2.group(1)
+            topdata['tasks']['running'] = matchobj_2.group(2)
+            topdata['tasks']['sleeping'] = matchobj_2.group(3)
         elif matchobj_3:
-            topdata['Cpu_utilization']['user'] = matchobj_3.group(1)
-            topdata['Cpu_utilization']['system'] = matchobj_3.group(2)
-            topdata['Cpu_utilization']['ni'] = matchobj_3.group(3)
-            topdata['Cpu_utilization']['ideal'] = matchobj_3.group(4)
-            topdata['Cpu_utilization']['wait'] = matchobj_3.group(5)
-            topdata['Cpu_utilization']['hi'] = matchobj_3.group(6)
-            topdata['Cpu_utilization']['si'] = matchobj_3.group(7)
-            topdata['Cpu_utilization']['st'] = matchobj_3.group(8)
+            topdata['cpu_utilization']['user'] = matchobj_3.group(1)
+            topdata['cpu_utilization']['system'] = matchobj_3.group(2)
+            topdata['cpu_utilization']['ni'] = matchobj_3.group(3)
+            topdata['cpu_utilization']['ideal'] = matchobj_3.group(4)
+            topdata['cpu_utilization']['wait'] = matchobj_3.group(5)
+            topdata['cpu_utilization']['hi'] = matchobj_3.group(6)
+            topdata['cpu_utilization']['si'] = matchobj_3.group(7)
+            topdata['cpu_utilization']['st'] = matchobj_3.group(8)
         elif matchobj_4:
-            topdata['RAM_KiB']['total'] = getMemInNumber(matchobj_4.group(1))
-            topdata['RAM_KiB']['used'] = getMemInNumber(matchobj_4.group(2))
-            topdata['RAM_KiB']['free'] = getMemInNumber(matchobj_4.group(3))
-            topdata['RAM_KiB']['buffers'] = getMemInNumber(matchobj_4.group(4))
+            topdata['ram']['total'] = getByteMemFromStr(matchobj_4.group(1), 1)
+            topdata['ram']['used'] = getByteMemFromStr(matchobj_4.group(2), 1)
+            topdata['ram']['free'] = getByteMemFromStr(matchobj_4.group(3), 1)
+            topdata['ram']['buffers'] = getByteMemFromStr(matchobj_4.group(4), 1)
         elif matchobj_5:
-            topdata['Swap_KiB']['total'] = getMemInNumber(matchobj_5.group(1))
-            topdata['Swap_KiB']['used'] = getMemInNumber(matchobj_5.group(2))
-            topdata['Swap_KiB']['free'] = getMemInNumber(matchobj_5.group(3))
-            topdata['Swap_KiB']['cached'] = getMemInNumber(matchobj_5.group(4))
+            topdata['swap']['total'] = getByteMemFromStr(matchobj_5.group(1), 1)
+            topdata['swap']['used'] = getByteMemFromStr(matchobj_5.group(2), 1)
+            topdata['swap']['free'] = getByteMemFromStr(matchobj_5.group(3), 1)
+            topdata['swap']['cached'] = getByteMemFromStr(matchobj_5.group(4), 1)
         else:
             # Break, If we found data for both process.
             # Also break if it chacked more the top 15 process.
@@ -1040,7 +1108,7 @@ def parseTopSection(content, parsedOutput):
                 topdata['asd_process']['resident_memory'] = l[5]
                 topdata['asd_process']['shared_memory'] = l[6]
                 for field in topdata['asd_process']:
-                    topdata['asd_process'][field] = getStrMemoryFromNum(topdata['asd_process'][field])
+                    topdata['asd_process'][field] = getByteMemFromStr(topdata['asd_process'][field], 1)
             elif not xdr_flag and re.search('xdr', line):
                 xdr_flag = True
                 l = re.split('\ +', line)
@@ -1048,12 +1116,16 @@ def parseTopSection(content, parsedOutput):
                 topdata['xdr_process']['resident_memory'] = l[5]
                 topdata['xdr_process']['shared_memory'] = l[6]
                 for field in topdata['xdr_process']:
-                    topdata['xdr_process'][field] = getStrMemoryFromNum(topdata['xdr_process'][field])
-    parsedOutput['topcmd'] = topdata
+                    topdata['xdr_process'][field] = getByteMemFromStr(topdata['xdr_process'][field], 1)
+    if kib_format:
+        
+        for key in topdata['ram']:
+            topdata['ram'][key] = topdata['ram'][key] * 1024
+        for key in topdata['swap']:
+            topdata['swap'][key] = topdata['swap'][key] * 1024
+    parsedOutput[final_section_name] = topdata
 
 
-def getStrMemoryFromNum(memNum):
-    return memNum + 'B'
 
 
 def getMemInNumber(memStr):
@@ -1061,22 +1133,26 @@ def getMemInNumber(memStr):
     return memNum
 
 
+#output: {kernel_name: AAA, nodename: AAA, kernel_release: AAA}
 def parseUnameSection(content, parsedOutput):
-    logging.warning("Parsing uname section.")
-    unamedata = {}
+    sec_id = 'ID_24'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
-        logging.warning("Null section json.")
+        logging.warning("Null section json")
         return
-    if 'uname -a' not in content:
-        logging.warning("`uname -a` section is not present in section json ")
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
-    unameSectionList = content['uname -a']
 
-    if len(unameSectionList) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section(uname -a).")
-        #return
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
 
-    unameSection = unameSectionList[0]
+    unamedata = {}
+    unameSection = content[raw_section_name][0]
 
     for line in unameSection:
         if re.search('uname -a', line):
@@ -1087,30 +1163,32 @@ def parseUnameSection(content, parsedOutput):
         unamedata['nodename'] = l[1]
         unamedata['kernel_release'] = l[2]
         break
-    parsedOutput['uname'] = unamedata
+    parsedOutput[final_section_name] = unamedata
 
 
-        
+# output: {key: val..........}
 def parseMeminfoSection(content, parsedOutput):
-    logging.info("Parsing meminfo section.")
-    meminfodata = {}
+    sec_id = 'ID_92'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
         logging.warning("Null section json")
         return
-    if 'meminfo' not in content:
-        logging.warning("`meminfo` section is not present in section json.")
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
-    meminfoSectionList = content['meminfo']
 
-    if len(meminfoSectionList) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section(meminfo).")
-        #return
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
 
-    meminfoSection = meminfoSectionList[0]
+    meminfodata = {}
+    meminfoSection = content[raw_section_name][0]
+    
     # If this section is not empty then there would be more than 5-6 lines, defensive check.
     if len(meminfoSection) < 3:
         logging.info("meminfo section seems empty.")
-        parsedOutput['meminfo_kB'] = meminfodata
         return
 
     start_section_flag = False
@@ -1124,35 +1202,264 @@ def parseMeminfoSection(content, parsedOutput):
         if start_section_flag:
             # "MemTotal:       32653368 kB\n",
             keyval = line.split(':')
-            meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
+            #meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
+            meminfodata[keyval[0]] = int(keyval[1].split()[0]) * 1024
+    parsedOutput[final_section_name] = meminfodata
 
-    parsedOutput['meminfo_kB'] = meminfodata
 
 
+### "hostname\n",
+### "rs-as01\n",
+# output: {hostname: [hnlist]}
 def parseHostnameSection(content, parsedOutput):
-    logging.info("Parsing hostname section.")
-    hnamedata = {}
+    sec_id = 'ID_22'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
     if not content:
         logging.warning("Null section json")
         return
-    if 'hostname' not in content:
-        logging.warning("`hostname` section is not present in section json.")
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
         return
-    hnameSectionList = content['hostname']
 
-    if len(hnameSectionList) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section(hostname).")
-        #return
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    hnamedata = {}
+    hnameSection = content[raw_section_name][0]
 
-    hnameSection = hnameSectionList[0]
     for line in hnameSection:
-        if line == '\n' or line == '.' or 'hostname -I' in line:
+        if line == '\n' or line == '.' or 'hostname' in line:
             continue
         else:
-            hnamedata['hostname'] = line.split('\n')[0].split(',')
+            hnamedata['hostname'] = line.rstrip().split(',')
             break
 
-    parsedOutput['hostname'] = parsedOutput
+    parsedOutput[final_section_name] = hnamedata
+
+
+### "Filesystem             Size  Used Avail Use% Mounted on\n",
+### "/dev/xvda1             7.8G  1.6G  5.9G  21% /\n",
+### "none                   4.0K     0  4.0K   0% /sys/fs/cgroup\n",
+
+# output: [{name: AAA, size: AAA, used: AAA, avail: AAA, %use: AAA, mount_point: AAA}, ....]
+def parseDfSection(content, parsedOutput):
+    sec_id = 'ID_38'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    dfData = []
+    tokCount = 0
+    startSec = False
+
+    dfSection = content[raw_section_name][0]
+
+    for line in dfSection:
+        if line.rstrip() == '':
+            break
+        if 'Filesystem' in line and 'Size' in line:
+            startSec = True
+            tokList = line.rstrip().split()
+            tokCount = len(tokList)
+            continue
+        if startSec:
+            tokList = line.rstrip().split()
+
+            if (len(tokList) + 1 != tokCount):
+                break
+
+            fileSystem = {}
+            fileSystem['name'] = tokList[0]
+            fileSystem['size'] = getByteMemFromStr(tokList[1], 1)
+            fileSystem['used'] = getByteMemFromStr(tokList[2], 1)
+            fileSystem['avail'] = getByteMemFromStr(tokList[3], 1)
+            fileSystem['%use'] = tokList[4].replace('%', '')
+            fileSystem['mount_point'] = tokList[5]
+
+            dfData.append(fileSystem)
+
+    parsedOutput[final_section_name] = dfData
+
+
+### "             total       used       free     shared    buffers     cached\n",
+### "Mem:         32068      31709        358          0         17      13427\n",
+### "-/+ buffers/cache:      18264      13803\n",
+### "Swap:         1023        120        903\n",
+
+# output: {mem: {}, buffers/cache: {}, swap: {}} 
+def parseFreeMSection(content, parsedOutput):
+    sec_id = 'ID_37'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    freeMData = {}
+    tokList = []
+    startSec = False
+
+    freeMSection = content[raw_section_name][0]
+
+    for line in freeMSection:
+        if 'total' in line and 'used' in line and 'free' in line:
+            tokList = line.rstrip().split()
+            startSec = True
+
+        if startSec and 'Mem:' in line:
+            dataList = line.rstrip().split()
+
+            memObj = {}
+            for idx, val in enumerate(tokList):
+                memObj[val] = dataList[idx + 1]
+    
+            freeMData['mem'] = memObj
+            continue
+        
+        if startSec and '-/+ buffers/cache:' in line:
+            dataList = line.rstrip().split()
+
+            bufferObj = {}
+            bufferObj[tokList[1]] = dataList[1]
+            bufferObj[tokList[2]] = dataList[2]
+
+            freeMData['buffers/cache'] = bufferObj
+            continue
+
+        if startSec and 'Swap:' in line:
+            dataList = line.rstrip().split()
+
+            swapObj = {}
+            swapObj[tokList[0]] = dataList[1]
+            swapObj[tokList[1]] = dataList[2]
+            swapObj[tokList[2]] = dataList[3]
+
+            freeMData['swap'] = swapObj
+            continue
+
+    parsedOutput[final_section_name] = freeMData
+    
+
+### "iostat -x 1 10\n",
+### "Linux 2.6.32-279.el6.x86_64 (bfs-dl360g8-02) \t02/02/15 \t_x86_64_\t(24 CPU)\n",
+### "avg-cpu:  %user   %nice %system %iowait  %steal   %idle\n",
+### "           0.78    0.00    1.44    0.26    0.00   97.51\n",
+### "\n",
+### "Device:         rrqm/s   wrqm/s     r/s     w/s   rsec/s   wsec/s avgrq-sz avgqu-sz   await  svctm  %util\n",
+### "sdb               0.00     4.00    0.00    4.00     0.00    64.00    16.00     0.02    5.75   4.00   1.60\n",
+
+
+# output: [{avg-cpu: {}, device_stat: {}}, .........]
+def parseIOstatSection(content, parsedOutput):
+    sec_id = 'ID_43'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    iostatSection = content[raw_section_name][0]
+
+    # Create a List of all instances of iostat data.
+    sectionList = []
+    start = False
+    section = []
+    for line in iostatSection:
+        if 'avg-cpu' in line and 'user' in line:
+            if start:
+                sectionList.append(section)
+                section = []
+            start = True
+
+        section.append(line)
+
+    iostatData = []
+    tokList = []
+    startSec = False
+
+    avgcpuLine = False
+    tok_cpuline = []
+    deviceLine = False
+    tok_deviceline = []
+
+    # Iterate over all instances and create list of maps
+    for iostatSection in sectionList:
+        sectionData = {}
+        cpuobj = {}
+        deviceobj = {}
+        for line in iostatSection:
+            if 'avg-cpu' in line and 'user' in line:
+                startSec = True
+                avgcpuLine = True
+                tok_cpuline = line.rstrip().split()
+                continue
+            
+            if 'Device:' in line and 'rrqm/s' in line:
+                avgcpuLine = False
+                deviceLine = True
+                tok_deviceline = line.rstrip().split()
+                continue
+
+
+            if avgcpuLine:
+                dataList = line.rstrip().split()
+                if len(dataList) + 1 != len(tok_cpuline):
+                    continue
+
+                for idx, val in enumerate(dataList):
+                    cpuobj[tok_cpuline[idx + 1]] = val
+                continue
+
+            if deviceLine:
+                dataList = line.rstrip().split()
+                if len(dataList) != len(tok_deviceline):
+                    continue
+
+                deviceobj[tok_deviceline[0].replace(':', '')] = dataList[0]
+                for idx, val in enumerate(dataList):
+                    if idx == 0:
+                        continue
+                    deviceobj[tok_deviceline[idx]] = val
+
+        sectionData['avg-cpu'] = cpuobj
+        sectionData['device_stat'] = deviceobj
+        iostatData.append(sectionData)
+
+    parsedOutput[final_section_name] = iostatData
+
+
 
 
 ########################################################################
@@ -1179,11 +1486,28 @@ def parseSysSection(sectionList, content, parsedOutput):
 
         elif section == 'awsdata':
             parseAWSDataSection(content, parsedOutput)
+
+        elif section == 'hostname':
+            parseHostnameSection(content, parsedOutput)
+
+        elif section == 'df':
+            parseDfSection(content, parsedOutput)
+
+        elif section == 'free-m':
+            parseFreeMSection(content, parsedOutput)
+
+        elif section == 'iostat':
+            parseIOstatSection(content, parsedOutput)
+
         else:
             logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+        
+        if section in parsedOutput:
+            paramMap = {section: parsedOutput[section]}
+            typeCheckBasicValues(paramMap)
+            parsedOutput[section] = paramMap
 
     logging.info("Converting basic raw string vals to original vals.")
-    typeCheckBasicValues(parsedOutput)
 
 
 def parseAsSection(sectionList, content, parsedOutput):
@@ -1211,8 +1535,12 @@ def parseAsSection(sectionList, content, parsedOutput):
 
         else:
             logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+        
+        if section in parsedOutput:
+            paramMap = {section: parsedOutput[section]}
+            typeCheckBasicValues(paramMap)
+            parsedOutput[section] = paramMap
 
     logging.info("Converting basic raw string vals to original vals.")
-    typeCheckBasicValues(parsedOutput)
 
 
