@@ -32,14 +32,16 @@ def getByteMemFromStr(mem, suflen):
     elif 't' in mem or 'T' in mem:
         return getBytesFromFloat(mem, 40, suflen)
     else:
-        return mem
+        return int(mem)
 
 def getBytesFromFloat(mem, shift, suflen):
     memnum = float(mem[:-suflen])
+    if mem == '0':
+        return int(0)
     f, i = math.modf(memnum)
-    num = int(i) << shift
-    totalmem =  num + int((num/i)*f)
-    return totalmem
+    num = 1 << shift
+    totalmem = (i * num) + (f * num)
+    return int(totalmem)
 
 
 # Assumption - Always a valid number is passed to convert to integer/float
@@ -1227,14 +1229,14 @@ def parseHostnameSection(content, parsedOutput):
     if len(content[raw_section_name]) > 1:
         logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
  
-    hnamedata = {}
+    hnamedata = []
     hnameSection = content[raw_section_name][0]
 
     for line in hnameSection:
         if line == '\n' or line == '.' or 'hostname' in line:
             continue
         else:
-            hnamedata['hostname'] = line.rstrip().split(',')
+            hnamedata = line.rstrip().split()
             break
 
     parsedOutput[final_section_name] = hnamedata
@@ -1505,7 +1507,7 @@ def parseSysSection(sectionList, content, parsedOutput):
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
             typeCheckBasicValues(paramMap)
-            parsedOutput[section] = paramMap
+            parsedOutput[section] = paramMap[section]
 
     logging.info("Converting basic raw string vals to original vals.")
 
@@ -1539,7 +1541,7 @@ def parseAsSection(sectionList, content, parsedOutput):
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
             typeCheckBasicValues(paramMap)
-            parsedOutput[section] = paramMap
+            parsedOutput[section] = paramMap[section]
 
     logging.info("Converting basic raw string vals to original vals.")
 
