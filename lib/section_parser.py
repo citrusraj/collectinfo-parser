@@ -1229,14 +1229,14 @@ def parseHostnameSection(content, parsedOutput):
     if len(content[raw_section_name]) > 1:
         logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
  
-    hnamedata = []
+    hnamedata = {}
     hnameSection = content[raw_section_name][0]
 
     for line in hnameSection:
         if line == '\n' or line == '.' or 'hostname' in line:
             continue
         else:
-            hnamedata = line.rstrip().split()
+            hnamedata{'hosts'} = line.rstrip().split()
             break
 
     parsedOutput[final_section_name] = hnamedata
