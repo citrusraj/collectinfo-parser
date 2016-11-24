@@ -636,7 +636,8 @@ FILTER_LIST = {
     'ID_93': {
         'enable': True,
         'raw_section_name': 'interrupts',
-        'regex_new': "cat /proc/interrupts"
+        'final_section_name': 'interrupts',
+        'regex_new': "cat /proc/interrupts",
         # 'parser_func'
     },
     'ID_94': {
@@ -684,4 +685,4 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat']
+SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts']

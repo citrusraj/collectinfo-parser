@@ -3,6 +3,7 @@ import re
 import os
 import sys
 import math
+import copy
 import shutil
 import string
 import logging
@@ -1198,7 +1199,7 @@ def parseMeminfoSection(content, parsedOutput):
         # If line is a newline char, skip it. line size 4 (defensive check)
         if len(line) < 4 or line == '\n':
             continue
-        if re.search('meminfo', line):
+        if not start_section_flag and (re.search('meminfo', line) or ' kB' in line):
             start_section_flag = True
             continue
         if start_section_flag:
@@ -1207,6 +1208,7 @@ def parseMeminfoSection(content, parsedOutput):
             #meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
             meminfodata[keyval[0]] = int(keyval[1].split()[0]) * 1024
     parsedOutput[final_section_name] = meminfodata
+    print(parsedOutput[final_section_name])
 
 
 
@@ -1236,7 +1238,7 @@ def parseHostnameSection(content, parsedOutput):
         if line == '\n' or line == '.' or 'hostname' in line:
             continue
         else:
-            hnamedata{'hosts'} = line.rstrip().split()
+            hnamedata['hosts'] = line.rstrip().split()
             break
 
     parsedOutput[final_section_name] = hnamedata
@@ -1267,20 +1269,24 @@ def parseDfSection(content, parsedOutput):
     dfData = []
     tokCount = 0
     startSec = False
+    kb_size = False
 
     dfSection = content[raw_section_name][0]
 
     for line in dfSection:
+
         if line.rstrip() == '':
             break
-        if 'Filesystem' in line and 'Size' in line:
+        if 'Filesystem' in line:
             startSec = True
             tokList = line.rstrip().split()
             tokCount = len(tokList)
             continue
+        if '1K-block' in line:
+            kb_size = True
+
         if startSec:
             tokList = line.rstrip().split()
-
             if (len(tokList) + 1 != tokCount):
                 break
 
@@ -1291,10 +1297,12 @@ def parseDfSection(content, parsedOutput):
             fileSystem['avail'] = getByteMemFromStr(tokList[3], 1)
             fileSystem['%use'] = tokList[4].replace('%', '')
             fileSystem['mount_point'] = tokList[5]
-
+            if kb_size:
+                fileSystem['size'] = fileSystem['size'] * 1024
             dfData.append(fileSystem)
 
-    parsedOutput[final_section_name] = dfData
+    parsedOutput[final_section_name] = {}
+    parsedOutput[final_section_name]['Filesystems'] = dfData
 
 
 ### "             total       used       free     shared    buffers     cached\n",
@@ -1345,8 +1353,8 @@ def parseFreeMSection(content, parsedOutput):
             dataList = line.rstrip().split()
 
             bufferObj = {}
-            bufferObj[tokList[1]] = dataList[1]
-            bufferObj[tokList[2]] = dataList[2]
+            bufferObj[tokList[1]] = dataList[2]
+            bufferObj[tokList[2]] = dataList[3]
 
             freeMData['buffers/cache'] = bufferObj
             continue
@@ -1361,7 +1369,6 @@ def parseFreeMSection(content, parsedOutput):
 
             freeMData['swap'] = swapObj
             continue
-
     parsedOutput[final_section_name] = freeMData
     
 
@@ -1404,8 +1411,8 @@ def parseIOstatSection(content, parsedOutput):
                 sectionList.append(section)
                 section = []
             start = True
-
         section.append(line)
+    sectionList.append(section)
 
     iostatData = []
     tokList = []
@@ -1459,8 +1466,58 @@ def parseIOstatSection(content, parsedOutput):
         sectionData['device_stat'] = deviceobj
         iostatData.append(sectionData)
 
-    parsedOutput[final_section_name] = iostatData
+    parsedOutput[final_section_name] = {}
+    parsedOutput[final_section_name]['iostats'] = iostatData
 
+
+def parseInterruptsSection(content, parsedOutput):
+    sec_id = 'ID_93'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + "section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    irqSection = content[raw_section_name][0]
+
+    tokList = []
+    intList = []
+    for line in irqSection:
+        if 'cat /proc' in line or line == '\n':
+            continue
+        if 'CPU' in line:
+            cpu_tok = line.rstrip().split()
+            continue
+        if 'TxRx' in line:
+
+            tokList = line.rstrip().split()
+            device_name = tokList[-1]
+            int_type = tokList[-2]
+            int_id = tokList[0]
+            cpu_list = tokList[1:-2]
+
+            dev_obj = {}
+            int_obj = {}
+            int_obj['interrupts'] = {}
+            for idx, cpu in enumerate(cpu_tok):
+                int_obj['interrupts'][cpu] = cpu_list[idx]
+
+            dev_obj[device_name] = int_obj
+            dev_obj['interrupt_id'] = int_id
+            dev_obj['interrupt_type'] = int_type
+            intList.append(dev_obj)
+
+    parsedOutput[final_section_name] = {}
+    parsedOutput[final_section_name]['device_interrupts'] = intList
 
 
 
@@ -1501,14 +1558,17 @@ def parseSysSection(sectionList, content, parsedOutput):
         elif section == 'iostat':
             parseIOstatSection(content, parsedOutput)
 
+        elif section == 'interrupts':
+            parseInterruptsSection(content, parsedOutput)
+
         else:
             logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
         
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
             typeCheckBasicValues(paramMap)
-            parsedOutput[section] = paramMap[section]
-
+            parsedOutput[section] = copy.deepcopy(paramMap[section])
+    
     logging.info("Converting basic raw string vals to original vals.")
 
 
@@ -1541,7 +1601,7 @@ def parseAsSection(sectionList, content, parsedOutput):
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
             typeCheckBasicValues(paramMap)
-            parsedOutput[section] = paramMap[section]
+            parsedOutput[section] = copy.deepcopy(paramMap[section])
 
     logging.info("Converting basic raw string vals to original vals.")
 
