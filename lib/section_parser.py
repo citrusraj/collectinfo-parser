@@ -1283,6 +1283,7 @@ def parseDfSection(content, parsedOutput):
             continue
         if '1K-block' in line:
             kb_size = True
+            continue
 
         if startSec:
             tokList = line.rstrip().split()
@@ -1415,7 +1416,6 @@ def parseIOstatSection(content, parsedOutput):
 
     iostatData = []
     tokList = []
-    startSec = False
 
     avgcpuLine = False
     tok_cpuline = []
@@ -1426,10 +1426,10 @@ def parseIOstatSection(content, parsedOutput):
     for iostatSection in sectionList:
         sectionData = {}
         cpuobj = {}
-        deviceobj = {}
+        deviceobjList = []
         for line in iostatSection:
+            deviceobj = {}
             if 'avg-cpu' in line and 'user' in line:
-                startSec = True
                 avgcpuLine = True
                 tok_cpuline = line.rstrip().split()
                 continue
@@ -1460,9 +1460,11 @@ def parseIOstatSection(content, parsedOutput):
                     if idx == 0:
                         continue
                     deviceobj[tok_deviceline[idx]] = val
+                deviceobjList.append(deviceobj)
+
 
         sectionData['avg-cpu'] = cpuobj
-        sectionData['device_stat'] = deviceobj
+        sectionData['device_stat'] = deviceobjList
         iostatData.append(sectionData)
 
     parsedOutput[final_section_name] = {}
