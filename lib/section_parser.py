@@ -267,7 +267,7 @@ def getNodesFromLatencyInfo(content):
     raw_section_name, final_section_name = getSectionNameFromId(sec_id)
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -310,7 +310,7 @@ def getNodesFromNetworkInfo(content):
     raw_section_name, final_section_name = getSectionNameFromId(sec_id)
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -671,7 +671,7 @@ def parseConfigSection(nodes, content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -701,7 +701,7 @@ def parseStatSection(nodes, content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -731,7 +731,7 @@ def parseLatencySection(nodes, content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -785,7 +785,7 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -933,7 +933,7 @@ def parseAWSDataSection(content, parsedOutput):
             awsSectionList = content[raw_section_name_2]
 
     elif raw_section_name_1 in content:
-        awsSectionList = content[raw_section_name_2]
+        awsSectionList = content[raw_section_name_1]
     elif raw_section_name_2 in content:
         awsSectionList = content[raw_section_name_2]
     else:
@@ -1036,7 +1036,7 @@ def parseTopSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1147,7 +1147,7 @@ def parseUnameSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1180,7 +1180,7 @@ def parseMeminfoSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1224,7 +1224,7 @@ def parseHostnameSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1258,7 +1258,7 @@ def parseDfSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1272,10 +1272,10 @@ def parseDfSection(content, parsedOutput):
 
     dfSection = content[raw_section_name][0]
 
-    for line in dfSection:
+    for index, line in enumerate(dfSection):
 
         if line.rstrip() == '':
-            break
+            continue
         if 'Filesystem' in line:
             startSec = True
             tokList = line.rstrip().split()
@@ -1287,8 +1287,16 @@ def parseDfSection(content, parsedOutput):
 
         if startSec:
             tokList = line.rstrip().split()
+
             if (len(tokList) + 1 != tokCount):
-                break
+                if index < len(dfSection) - 1:
+                    if (len(tokList) + len(dfSection[index + 1].rstrip().split()) == tokCount):
+                        tokList = tokList + dfSection[index + 1].rstrip().split()
+                        dfSection[index + 1] = ''
+                    else:
+                        continue
+                else:
+                    continue
 
             fileSystem = {}
             fileSystem['name'] = tokList[0]
@@ -1321,7 +1329,7 @@ def parseFreeMSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1392,7 +1400,7 @@ def parseIOstatSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1481,7 +1489,7 @@ def parseInterruptsSection(content, parsedOutput):
         return
 
     if raw_section_name not in content:
-        logging.warning(raw_section_name + "section not present.")
+        logging.warning(raw_section_name + " section not present.")
         return
 
     if len(content[raw_section_name]) > 1:
@@ -1507,14 +1515,13 @@ def parseInterruptsSection(content, parsedOutput):
             cpu_list = tokList[1:-2]
 
             dev_obj = {}
-            int_obj = {}
-            int_obj['interrupts'] = {}
-            for idx, cpu in enumerate(cpu_tok):
-                int_obj['interrupts'][cpu] = cpu_list[idx]
-
-            dev_obj[device_name] = int_obj
-            dev_obj['interrupt_id'] = int_id
+            dev_obj['device_name'] = device_name
+            dev_obj['interrupt_id'] = int_id.replace(':', '')
             dev_obj['interrupt_type'] = int_type
+
+            dev_obj['interrupts'] = {}
+            for idx, cpu in enumerate(cpu_tok):
+                dev_obj['interrupts'][cpu] = cpu_list[idx]
             intList.append(dev_obj)
 
     parsedOutput[final_section_name] = {}
@@ -1530,7 +1537,6 @@ def parseInterruptsSection(content, parsedOutput):
 def parseSysSection(sectionList, content, parsedOutput):
     logging.info("Parse sys stats.")
     for section in sectionList:
-        logging.info("Parsing section: " + section)
 
         if section == 'top':
             parseTopSection(content, parsedOutput)
@@ -1567,10 +1573,10 @@ def parseSysSection(sectionList, content, parsedOutput):
         
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
+            logging.info("Converting basic raw string vals to original vals.")
             typeCheckBasicValues(paramMap)
             parsedOutput[section] = copy.deepcopy(paramMap[section])
     
-    logging.info("Converting basic raw string vals to original vals.")
 
 
 def parseAsSection(sectionList, content, parsedOutput):
@@ -1582,7 +1588,6 @@ def parseAsSection(sectionList, content, parsedOutput):
         return
 
     for section in sectionList:
-        logging.info("Parsing section: " + section)
 
         if section == 'statistics':
             parseStatSection(nodes, content, parsedOutput)
@@ -1601,9 +1606,9 @@ def parseAsSection(sectionList, content, parsedOutput):
         
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
+            logging.info("Converting basic raw string vals to original vals.")
             typeCheckBasicValues(paramMap)
             parsedOutput[section] = copy.deepcopy(paramMap[section])
 
-    logging.info("Converting basic raw string vals to original vals.")
 
 

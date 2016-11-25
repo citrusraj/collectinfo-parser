@@ -4,6 +4,7 @@ import section_filter_list
 import logging
 
 SECTION_NAME_LIST = section_filter_list.SECTION_NAME_LIST
+SECTION_FILTER_LIST = section_filter_list.FILTER_LIST
 
 def parseAllStatsCinfo(filepath, parsedOutput, force = False):
     parseAllAsStatsCinfo(filepath, parsedOutput, force)
@@ -14,9 +15,16 @@ def parseAllAsStatsCinfo(filepath, parsedOutput, force = False):
     # Parse collectinfo and create intermediate section_map
     logging.info("Parsing All aerospike stat sections.")
     outmap = {}
+    outmap_section_list = []
     cinfo_parser.extract_validate_filter_section_from_file(filepath, outmap, force)
+    for section_id in outmap['section_ids']:
+        if 'final_section_name' in SECTION_FILTER_LIST[section_id]:
+            outmap_section_list.append(SECTION_FILTER_LIST[section_id]['final_section_name'])
 
-    section_parser.parseAsSection(SECTION_NAME_LIST, outmap, parsedOutput)
+    sction_filter_list = list(set(outmap_section_list).intersection(SECTION_NAME_LIST))
+
+    logging.info("Parsing sections: " + str(sction_filter_list))
+    section_parser.parseAsSection(sction_filter_list, outmap, parsedOutput)
 
 
 
@@ -24,9 +32,17 @@ def parseAllSysStatsCinfo(filepath, parsedOutput, force = False):
     # Parse collectinfo and create intermediate section_map
     logging.info("Parsing All sys stat sections.")
     outmap = {}
+    outmap_section_list = []
     cinfo_parser.extract_validate_filter_section_from_file(filepath, outmap, force)
+    for section_id in outmap['section_ids']:
+        if 'final_section_name' in SECTION_FILTER_LIST[section_id]:
+            outmap_section_list.append(SECTION_FILTER_LIST[section_id]['final_section_name'])
 
-    section_parser.parseSysSection(SECTION_NAME_LIST, outmap, parsedOutput)
+    sction_filter_list = list(set(outmap_section_list).intersection(SECTION_NAME_LIST))
+
+
+    logging.info("Parsing sections: " + str(sction_filter_list))
+    section_parser.parseSysSection(sction_filter_list, outmap, parsedOutput)
 
 
 

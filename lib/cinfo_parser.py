@@ -115,6 +115,8 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
     non_delimit_regx = NON_DELIMIT_REGEX
     filter_list = FILTER_LIST
     skip_list = SKIP_LIST
+    if 'cinfo_paths' not in outmap:
+        outmap['cinfo_paths'] = []
 
     if not os.path.exists(filepath):
         logging.warning("collectinfo doesn't exist at path: " + filepath)
@@ -128,6 +130,7 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
     else:
         logging.info("Old collectinfo version: " + filepath)
         extract_section_from_old_cinfo(filepath, filter_list, skip_list, non_delimit_regx, outmap, force)
+    outmap['cinfo_paths'].append(filepath)
 
     return section_count
 
@@ -137,9 +140,12 @@ def validateSectionCount(section_count, outmap, force):
     if section_count != 0:
         outmap_sections = 0
         for key in outmap:
+            if key == 'cinfo_paths' or key == 'section_ids':
+                continue
             outmap_sections += len(outmap[key])
 
         logging.debug("outmap_sec: " + str(outmap_sections) + "section_count: " + str(section_count))
+        # Two more new sections added in final json: 'section_ids', 'cinfo_paths'
         if outmap_sections != section_count:
             logging.error("Something wrong, no of section in file and no of extracted are not matching")
             logging.error("outmap_sec: " + str(outmap_sections) + "section_count: " + str(section_count))
@@ -150,6 +156,8 @@ def validateSectionCount(section_count, outmap, force):
 # Extract sections from old collectinfo files
 def extract_section_from_old_cinfo(cinfo_path, filter_list, skip_list, regex, outmap, force):
     logging.info("Processing old collectinfo: " + cinfo_path)
+    if 'section_ids' not in outmap:
+        outmap['section_ids'] = []
     new_cinfo = False
     # Check if cinfo file doesn't exist in given path
     if not os.path.exists(cinfo_path):
@@ -186,6 +194,7 @@ def extract_section_from_old_cinfo(cinfo_path, filter_list, skip_list, regex, ou
                 if fileline == '' or re.search(filter_obj[regex], fileline):
                     if filter_sec != '':
                         updateMap(new_cinfo, filter_sec, datastr, outmap, skip_list, force)
+                        outmap['section_ids'].append(key)
                         datastr = []
                     if fileline == '':
                         break
@@ -233,6 +242,8 @@ def section_count_fun(cinfo_path, delimiter):
 # Extract sections from new collectinfo files, having delimiter.
 def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, delimiter, parse_all, outmap, force):
     logging.info("Processing new collectinfo: " + cinfo_path)
+    if 'section_ids' not in outmap:
+        outmap['section_ids'] = []
     new_cinfo = True
     parse_section = 0
     # Check if cinfo file doesn't exist in given path
@@ -269,6 +280,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                 filter_sec = ''         # Filter section
                 index = 0
                 eof = False
+                filter_id = '0'
                 while(True):
                     section_line = ''
                     try:
@@ -286,6 +298,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                         
                             if parse_all or (filter_sec is not 'Unknown'):
                                 updateMap(new_cinfo, filter_sec, datastr, outmap, skip_list, force)
+                                outmap['section_ids'].append(filter_id)
                                 parse_section += parse_section
 
                                 # All section from filter_list is parsed and parse_all has been set false
@@ -322,6 +335,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                                     known = True
                                     parse_section += parse_section
                                     filter_sec = filter_obj['raw_section_name']
+                                    filter_id = key
                                     break
 
                         # Append line in datastr
@@ -344,10 +358,12 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
 def extract_section_from_live_cmd(cmdName, cmdOutput, outmap):
     sectionName = ''
+    sectionId = '0'
     for key in FILTER_LIST:
         section = FILTER_LIST[key]
         if 'final_section_name' in section and section['final_section_name'] == cmdName:
             sectionName = section['raw_section_name']
+            sectionId = key
     if sectionName == '':
         logging.warning("Can not find section_name for cmdName: " + cmdName)
         return
@@ -355,6 +371,7 @@ def extract_section_from_live_cmd(cmdName, cmdOutput, outmap):
     outmap[sectionName] = []
     outList = cmdOutput.split('\n')
     outmap[sectionName].append(outList)
+    outmap['section_ids'] = [section_id]
 
     
 # Cross_validate printconfig section in extracted section json from raw cinfo
