@@ -1551,7 +1551,7 @@ def parseIPAddrSection(content, parsedOutput):
 
     for line in ipSection:
         # inet 127.0.0.1/8 scope host lo
-        if 'inet' in line:
+        if 'inet' in line and 'inet6' not in line:
             tokList = line.rstrip().split()
             ipList.append(tokList[1].split('/')[0])
             continue
