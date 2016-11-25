@@ -1213,7 +1213,7 @@ def parseMeminfoSection(content, parsedOutput):
 
 ### "hostname\n",
 ### "rs-as01\n",
-# output: {hostname: [hnlist]}
+# output: {hostname: {'hosts': [...................]}}
 def parseHostnameSection(content, parsedOutput):
     sec_id = 'ID_22'
     raw_section_name, final_section_name = getSectionNameFromId(sec_id)
@@ -1528,6 +1528,45 @@ def parseInterruptsSection(content, parsedOutput):
     parsedOutput[final_section_name]['device_interrupts'] = intList
 
 
+def parseIPAddrSection(content, parsedOutput):
+    sec_id = 'ID_72'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    ipSection = content[raw_section_name][0]
+    ipList = []
+    toList = []
+
+    for line in ipSection:
+        # inet 127.0.0.1/8 scope host lo
+        if 'inet' in line:
+            tokList = line.rstrip().split()
+            ipList.append(tokList[1].split('/')[0])
+            continue
+
+        # inet6 fe80::a236:9fff:fe82:7fde/64 scope link
+        if 'inet6' in line:
+            tokList = line.rstrip().split()
+            ip = '[' + tokList[1].split('/')[0] + ']'
+            ipList.append(ip)
+            continue
+
+    parsedOutput[final_section_name] = {}
+    parsedOutput[final_section_name]['hosts'] = ipList
+
+
 
 ########################################################################
 ################## Wraper func for parsing sections ####################
@@ -1567,6 +1606,9 @@ def parseSysSection(sectionList, content, parsedOutput):
 
         elif section == 'interrupts':
             parseInterruptsSection(content, parsedOutput)
+        
+        elif section == 'ip_addr':
+             parseIPAddrSection(content, parsedOutput)
 
         else:
             logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")

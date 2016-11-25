@@ -507,6 +507,7 @@ FILTER_LIST = {
     'ID_72': {
         'enable': True,
         'raw_section_name': 'info_ip addr',
+        'final_section_name': 'ip_addr',
         'regex_new': 'ip addr'
         # 'parser_func':
     },
@@ -685,4 +686,4 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts']
+SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']

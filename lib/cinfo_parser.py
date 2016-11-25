@@ -371,7 +371,7 @@ def extract_section_from_live_cmd(cmdName, cmdOutput, outmap):
     outmap[sectionName] = []
     outList = cmdOutput.split('\n')
     outmap[sectionName].append(outList)
-    outmap['section_ids'] = [section_id]
+    outmap['section_ids'] = [sectionId]
 
     
 # Cross_validate printconfig section in extracted section json from raw cinfo
