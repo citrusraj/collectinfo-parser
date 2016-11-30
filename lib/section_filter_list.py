@@ -11,7 +11,7 @@ CMD_PREFIX = 'running shell command: '
 # Param regex_new: regex for collectinfos having delimiter.
 # Param regex_old: regex for collectinfos, not having delimiter.
 FILTER_LIST = {
-    'ID_90': {
+    'ID_1': {
         'enable': True,
         'raw_section_name': 'Node',
         'regex_new': '^Node\n',
@@ -404,13 +404,14 @@ FILTER_LIST = {
         'enable': True,
         'raw_section_name':'info_service list',
         #'regex_new': '[INFO] Data collection for service in progress..',
-        'regex_new': "(?=.*service)(?!.*services)"
+        #'regex_new': "service\n|(?=.*service)(?!.*(services|'service'))"
+        'regex_new': "service\n|for service in"
         # 'parser_func':
     },
     'ID_56': {
         'enable': True,
         'raw_section_name':'info_services',
-        'regex_new': 'services'
+        'regex_new': 'services\n| for services in'
         # 'parser_func':
     },
     'ID_57': {
@@ -686,4 +687,5 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
+AS_SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info']
+SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']

@@ -17,7 +17,7 @@ SECTION_DELIMITER = 'ASCOLLECTINFO'
 MIN_VALIDATOR_STRING = 2
 COLLECTINFO_START_LINE_MAX = 4
 SECTION_DETECTION_LINE_MAX = 2
-MIN_SECTIONS_IN_COLLECT_INFO = 2
+MIN_LINES_IN_SECTION_JSON = 3
 
 FILTER_LIST = section_filter_list.FILTER_LIST
 SKIP_LIST = section_filter_list.SKIP_LIST
@@ -28,7 +28,8 @@ SKIP_LIST = section_filter_list.SKIP_LIST
 # Remove disabled filter section from result dictionary.
 # Param outmap: Dictionary having parsed section entries.
 # Param filter_list: Parsed section filter map.
-def filter_processed_cinfo(outmap, filter_list):
+def filter_processed_cinfo(outmap):
+    filter_list = FILTER_LIST
     logging.info("Removing disabled filter section...")
     for key in filter_list:
         filter_obj = filter_list[key]
@@ -101,12 +102,16 @@ def updateMap(newcinfo, key, value, outmap, skip_list, force):
     outmap[key] = vallist
 
 def extract_validate_filter_section_from_file(filepath, outmap, force):
-    filter_list = FILTER_LIST
     logging.info("Creating section json. parse, validate, filter sections.")
     parse_all = True
+
+    if 'cinfo_paths' not in outmap:
+        outmap['cinfo_paths'] = []
+        
     section_count = extract_section_from_file(filepath, parse_all, outmap, force)
     validateSectionCount(section_count, outmap, force)
-    filter_processed_cinfo(outmap, filter_list)
+    outmap['cinfo_paths'].append(filepath)
+    filter_processed_cinfo(outmap)
 
 def extract_section_from_file(filepath, parse_all, outmap, force):
     logging.info("Extract sections from collectinfo file.")
@@ -115,8 +120,7 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
     non_delimit_regx = NON_DELIMIT_REGEX
     filter_list = FILTER_LIST
     skip_list = SKIP_LIST
-    if 'cinfo_paths' not in outmap:
-        outmap['cinfo_paths'] = []
+    section_count = 0
 
     if not os.path.exists(filepath):
         logging.warning("collectinfo doesn't exist at path: " + filepath)
@@ -130,7 +134,6 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
     else:
         logging.info("Old collectinfo version: " + filepath)
         extract_section_from_old_cinfo(filepath, filter_list, skip_list, non_delimit_regx, outmap, force)
-    outmap['cinfo_paths'].append(filepath)
 
     return section_count
 
@@ -140,7 +143,7 @@ def validateSectionCount(section_count, outmap, force):
     if section_count != 0:
         outmap_sections = 0
         for key in outmap:
-            if key == 'cinfo_paths' or key == 'section_ids':
+            if key == 'section_ids':
                 continue
             outmap_sections += len(outmap[key])
 
@@ -299,7 +302,7 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
                             if parse_all or (filter_sec is not 'Unknown'):
                                 updateMap(new_cinfo, filter_sec, datastr, outmap, skip_list, force)
                                 outmap['section_ids'].append(filter_id)
-                                parse_section += parse_section
+                                parse_section = parse_section + 1
 
                                 # All section from filter_list is parsed and parse_all has been set false
                                 # So exit. Here filter_list could be subset, not all cinfo sections.
@@ -333,7 +336,6 @@ def extract_section_from_new_cinfo(cinfo_path, filter_list, skip_list, regex, de
 
                                 if re.search(filter_obj[regex], section_line):
                                     known = True
-                                    parse_section += parse_section
                                     filter_sec = filter_obj['raw_section_name']
                                     filter_id = key
                                     break
@@ -422,12 +424,13 @@ def section_validator(validator_section, validator_list, validator_thr, cinfo_pa
         return False
     if not cinfo_path.endswith(".json"):
         logging.warning("Not a cinfo file: " + cinfo_path)
-        return True
+        return False
+        #return True
     with open(cinfo_path) as cinfo_file:
         data = json.load(cinfo_file)
 
-        # Skip files which are not valid cinfo
-        if(len(data)) < MIN_SECTIONS_IN_COLLECT_INFO:
+        # Skip files which are not valid section json for cinfo
+        if(len(data)) < MIN_LINES_IN_SECTION_JSON:
             return True
 
         if 'cinfo_paths' not in data.keys() or len(data['cinfo_paths']) == 0:

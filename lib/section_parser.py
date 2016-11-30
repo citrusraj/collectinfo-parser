@@ -16,6 +16,17 @@ FILTER_LIST = section_filter_list.FILTER_LIST
 ###############################################################################
 ########################### Section parser Util func ##########################
 ###############################################################################
+def getSectionListForParsing(content, available_section):
+    final_section_list = []
+    content_section_list = []
+    if 'section_ids' not in content:
+        logging.warning("`section_ids` section missing in section_json.")
+        return final_section_list
+    for section_id in content['section_ids']:
+        if 'final_section_name' in FILTER_LIST[section_id]:
+            content_section_list.append(FILTER_LIST[section_id]['final_section_name'])
+    final_section_list = list(set(content_section_list).intersection(available_section))
+    return final_section_list
 
 def getSectionNameFromId(sec_id):
     raw_section_name = FILTER_LIST[sec_id]['raw_section_name']
@@ -24,6 +35,9 @@ def getSectionNameFromId(sec_id):
     
 
 def getByteMemFromStr(mem, suflen):
+    #Some files have float in (a,b) format rather than (a.b)
+    if ',' in mem:
+        mem = mem.replace(',', '.')
     if 'k' in mem or 'K' in mem:
         return getBytesFromFloat(mem, 10, suflen)
     elif 'm' in mem or 'M' in mem:
@@ -32,11 +46,23 @@ def getByteMemFromStr(mem, suflen):
         return getBytesFromFloat(mem, 30, suflen)
     elif 't' in mem or 'T' in mem:
         return getBytesFromFloat(mem, 40, suflen)
+    elif 'p' in mem or 'P' in mem:
+        return getBytesFromFloat(mem, 50, suflen)
+    elif 'e' in mem or 'E' in mem:
+        return getBytesFromFloat(mem, 60, suflen)
+    elif 'z' in mem or 'Z' in mem:
+        return getBytesFromFloat(mem, 70, suflen)
+    elif 'y' in mem or 'Y' in mem:
+        return getBytesFromFloat(mem, 80, suflen)
+
     else:
         return int(mem)
 
 def getBytesFromFloat(mem, shift, suflen):
-    memnum = float(mem[:-suflen])
+    try:
+        memnum = float(mem[:-suflen])
+    except ValueError:
+        return mem
     if mem == '0':
         return int(0)
     f, i = math.modf(memnum)
@@ -50,7 +76,10 @@ def strToNumber(number):
     try:
         return int(number)
     except ValueError:
-        return float(number)
+        try:
+            return float(number)
+        except ValueError:
+            return number
 
 
 # Bool is represented as 'true' or 'false'
@@ -87,9 +116,7 @@ def typeCheckFieldAndRawValues(section):
                 typeCheckFieldAndRawValues(item)
         
         elif isinstance(section[key], str):
-            if type(section[key]) is int or type(section[key]) is bool or type(section[key]) is list:
-                continue
-            elif section[key] is None:
+            if section[key] is None:
                 logging.warning("Value for key " + key + " is Null")
                 continue
             # Some numbers have a.b.c.d* format, which matches with IP address
@@ -143,6 +170,7 @@ def typeCheckFieldAndRawValues(section):
 # This should check only raw values.
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
+# This will skip list if its first item is not a dict.
 def typeCheckBasicValues(section):
     malformedkeys = []
     # ipRegex = "[0-9]{1,2,3}(\.[0-9]{1,2,3})*"
@@ -157,8 +185,6 @@ def typeCheckBasicValues(section):
         elif isinstance(section[key], str):
             if '.' in key:
                 malformedkeys.append(key)
-            if type(section[key]) is int or type(section[key]) is bool or type(section[key]) is list:
-                continue
             elif section[key] is None:
                 logging.info("Value for key " + key + " is Null")
                 continue
@@ -396,15 +422,6 @@ def updateSetAndBinCounts(parsedOutput, sectionName):
                         nsObj['sets'].update({sset: setObj})
             currObj.pop('Set')
 
-
-def updateNsCount(parsedOutput):
-    for nodeid in parsedOutput['nodes']:
-        nodedata = parsedOutput['nodes'][nodeid]
-        for sectname in nodedata:
-            section = nodedata[sectname]
-            if 'Namespace' in section:
-                parsedOutput['cluster'].update({'ns_count': len(section['Namespace'])})
-                break
 
 
 def isSingleColumnFormat(section):
@@ -682,7 +699,7 @@ def parseConfigSection(nodes, content, parsedOutput):
     logging.debug("invoking format identifier")
     singleColumn = isSingleColumnFormat(configSection)
 
-    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
     
     if singleColumn:
         parseSingleColumnFormat(configSection, parsedOutput, final_section_name)
@@ -712,7 +729,7 @@ def parseStatSection(nodes, content, parsedOutput):
     logging.debug("invoking format identifier")
     singleColumn = isSingleColumnFormat(statSection)
 
-    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
     
     if singleColumn:
         parseSingleColumnFormat(statSection, parsedOutput, final_section_name)
@@ -741,7 +758,7 @@ def parseLatencySection(nodes, content, parsedOutput):
     length = len(latency)
     histogram = ''
 
-    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name) 
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name) 
 
     for i in range(length):
         if "====" in latency[i] or "~~~~" in latency[i]:
@@ -795,7 +812,7 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
     sindexdata = {}
     sindexSection = content[raw_section_name][0]
 
-    initNodesForParsedJson(nodes, content, parsedOutput, raw_section_name)
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
     
     # Get the starting of data
     # "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Secondary Index Information~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
@@ -861,16 +878,13 @@ def parseAsdversion(content, parsedOutput):
         logging.warning(raw_section_name_1 + " and " + raw_section_name_1 + " section not present.")
         return
 
-    if len(content[raw_section_name]) > 1:
-        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
- 
 
     distro = {}
     distroFound = False
     toolFound = False
     amcFound = False
     verRegex = "[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
-    for dist in ['build rpm', 'build dpkg']:
+    for dist in [raw_section_name_1, raw_section_name_2]:
         if dist in content:
             distro = content[dist][0]
             for i in range(len(distro)):
@@ -1025,6 +1039,22 @@ def parseLSBReleaseSection(content, parsedOutput):
                 break
     parsedOutput[final_section_name_1] = lsbdata
 
+def replaceComma(datamap):
+    if isinstance(datamap, dict):
+        for key in datamap:
+            if isinstance(datamap[key], dict) or isinstance(datamap[key], list):
+                replaceComma(datamap[key])
+            else:
+                if isinstance(datamap[key], str):
+                    datamap[key] = datamap[key].replace(',', '.') if datamap[key].replace(',', '').isdigit() else datamap[key]
+    elif isinstance(datamap, list):
+        for index, item in datamap:
+            if isinstance(item, dict) or isinstance(item, list):
+                replaceComma(item)
+            else:
+                if isinstance(item, str):
+                    datamap[index] = datamap[index].replace(',', '.') if datamap[index].replace(',', '').isdigit() else datamap[index]
+
 
 def parseTopSection(content, parsedOutput):
     sec_id = 'ID_36'
@@ -1126,6 +1156,7 @@ def parseTopSection(content, parsedOutput):
             topdata['ram'][key] = topdata['ram'][key] * 1024
         for key in topdata['swap']:
             topdata['swap'][key] = topdata['swap'][key] * 1024
+    replaceComma(topdata)
     parsedOutput[final_section_name] = topdata
 
 
@@ -1266,20 +1297,19 @@ def parseDfSection(content, parsedOutput):
  
 
     dfData = []
-    tokCount = 0
+    tokCount = 6
     startSec = False
     kb_size = False
 
     dfSection = content[raw_section_name][0]
 
     for index, line in enumerate(dfSection):
-
+        if re.search(r'id.*enabled', line):
+            break
         if line.rstrip() == '':
             continue
         if 'Filesystem' in line:
             startSec = True
-            tokList = line.rstrip().split()
-            tokCount = len(tokList)
             continue
         if '1K-block' in line:
             kb_size = True
@@ -1288,9 +1318,9 @@ def parseDfSection(content, parsedOutput):
         if startSec:
             tokList = line.rstrip().split()
 
-            if (len(tokList) + 1 != tokCount):
+            if (len(tokList) != tokCount):
                 if index < len(dfSection) - 1:
-                    if (len(tokList) + len(dfSection[index + 1].rstrip().split()) == tokCount):
+                    if len(tokList) == 1 and (len(dfSection[index + 1].rstrip().split()) == tokCount - 1):
                         tokList = tokList + dfSection[index + 1].rstrip().split()
                         dfSection[index + 1] = ''
                     else:
@@ -1575,6 +1605,9 @@ def parseIPAddrSection(content, parsedOutput):
 
 def parseSysSection(sectionList, content, parsedOutput):
     logging.info("Parse sys stats.")
+    if len(sectionList) == 0:
+        logging.info("Empty section list.")
+        return
     for section in sectionList:
 
         if section == 'top':
@@ -1611,7 +1644,7 @@ def parseSysSection(sectionList, content, parsedOutput):
              parseIPAddrSection(content, parsedOutput)
 
         else:
-            logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+            logging.warning("Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST.")
         
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
@@ -1624,6 +1657,9 @@ def parseSysSection(sectionList, content, parsedOutput):
 def parseAsSection(sectionList, content, parsedOutput):
     # Parse As stat
     logging.info("Parse As stats.")
+    if len(sectionList) == 0:
+        logging.info("Empty section list.")
+        return
     nodes = identifyNodes(content)
     if not nodes:
         logging.warning("Node can't be identified. Can not parse")
@@ -1644,7 +1680,7 @@ def parseAsSection(sectionList, content, parsedOutput):
             parseSindexInfoSection(nodes, content, parsedOutput)
 
         else:
-            logging.warning("Section unknown, can not be parsed. Check SECTION_NAME_LIST.")
+            logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST.")
         
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
