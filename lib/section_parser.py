@@ -7,7 +7,7 @@ import copy
 import shutil
 import string
 import logging
-import section_filter_list
+from . import section_filter_list
 
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'sec_par.log', level=logging.INFO)
@@ -220,13 +220,31 @@ def typeCheckBasicValues(section):
 
 
 
-def getClusterSize(stats):
+def getClusterSize(content):
+    # statistics section
+    sec_id = 'ID_11'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Getting cluster size")
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    stats = content[raw_section_name][0]
     totalStats = len(stats)
     for i in range(totalStats):
         if 'cluster_size' in stats[i]:
             cluster_size_list = stats[i].split( )
             for cluster_size in cluster_size_list:
-                if isinstance(cluster_size, int):
+                #if isinstance(cluster_size, int):
+                if cluster_size.isdigit():
                     return int(cluster_size)
             return int(0)
 
@@ -247,15 +265,20 @@ def identifyNamespace(content):
     del1 = False
     del2 = False
     nsList = []
+    nsid = 0
     skiplines = 3
     for i in range(len(namespace)):
+        if 'Node' in namespace[i] and 'Namespace' in namespace[i]:
+            tokList = namespace[i].split()
+            if 'Node' in tokList[0]:
+                nsid = 1
         if "Number of" in namespace[i] or "No. " in namespace[i]:
             # End of Section
             break
-        if "~~~~Name" in Namespace[i]:
+        if "~~~~Name" in namespace[i]:
             del1 = True
             continue
-        elif "=== NAME" in Namespace[i]:
+        elif "=== NAME" in namespace[i]:
             del2 = True
             continue
         if del1 or del2:
@@ -264,7 +287,7 @@ def identifyNamespace(content):
                 continue
         if del1:
             # Leave 3 lines and get unique list of ns
-            ns = namespace[i].split()[0]
+            ns = namespace[i].split()[nsid]
             nsList.append(ns)
         if del2:
             # Leave 3 lines and get unique list of ns (ip/ns)
@@ -491,8 +514,8 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
             # print warning if the len(row) != 2.
             if len(row) != 2:
                 log.warning("MultiColumn Format Anamoly. A line contains unexpected entries : " + str(len(row)))
-            key = row[0].split()[0]
-            vals = row[1].split( )
+            key = row[0].rstrip().split()[0]
+            vals = row[1].rstrip().split()
             length = len(vals)
             # Here "NODE" is hardcoded to find the row containing nodeids.
             # TODO is there a better way to do it than hardcoding.
@@ -516,7 +539,7 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
                 for i in range(len(jsonArrays)):
                     # Order of nodeids and the values for each key is assumed to be same here.
                     if(index >= length):
-                        logging.warning("Number of values do not match the cluster size, Values : " + str(length) + " index " + str(index))
+                        logging.warning("Number of values do not match the cluster size, Values : " + str(length) + ", " + str(index))
                         break
                     if currentSection == "":
                         jsonArrays[i][key] = vals[index]
@@ -529,7 +552,7 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
                     index += 1
                     #warn in case len(val) > Cluster_size(no of nodes in the cluster).
                 if index != length:
-                    logging.warning("Number of values are lesser than cluster size, values : " + str(length))
+                    logging.warning("Number of values are lesser than cluster size, values : " + str(length) + "," + str(index + 1))
             # If we crossed the section delimiter, initialize a new dictionary for this new section in node's dictionary.
             elif not currentSection:
                 logging.warning("Data is present before a sub-section delimiter and thus data can't be associated with a sub-section")
@@ -862,6 +885,62 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
     typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
+
+##  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Features~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
+##  "NODE           :   192.168.16.174:3000   192.168.16.175:3000   192.168.16.176:3000   \n",
+##  "AGGREGATION    :   NO                    NO                    NO                    \n",
+##  "BATCH          :   NO                    NO                    NO                    \n",
+def parseFeaturesInfoSection(nodes, content, parsedOutput):
+    sec_id = 'ID_87'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+    
+    
+    featuredata = {}
+    featureSection = content[raw_section_name][0]
+
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
+
+    startSec = False
+    iplist = None
+    featureobj = []
+    for line in featureSection:
+        if line.rstrip() == '':
+            continue
+        if '~~~' in line:
+            startSec = True
+            continue
+        if startSec and 'NODE' in line:
+            iplist = line.rstrip().split(':', 1)[1].split()
+            for i in range(len(iplist)):
+                featureobj.append({})
+            continue
+        if startSec and iplist:
+            datalist = line.rstrip().split(':', 1)
+            key = datalist[0].rstrip()
+            fetlist = datalist[1].split()
+            for index, fet in enumerate(fetlist):
+                featureobj[index][key] = fet
+
+    for index, ip in enumerate(iplist):
+        for node in parsedOutput:
+            if ip in node:
+                parsedOutput[node][final_section_name] = featureobj[index]
+    
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+
+
 def parseAsdversion(content, parsedOutput):
     sec_id_1 = 'ID_27'
     raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
@@ -883,11 +962,15 @@ def parseAsdversion(content, parsedOutput):
     distroFound = False
     toolFound = False
     amcFound = False
+    build_data = {}
+    build_data['edition'] = 'EE'
     verRegex = "[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
     for dist in [raw_section_name_1, raw_section_name_2]:
         if dist in content:
             distro = content[dist][0]
             for i in range(len(distro)):
+                if re.search("community", distro[i]):
+                    build_data['edition'] = 'CE'
                 match = re.search(verRegex, distro[i])
                 version = ' '
                 if not match:
@@ -895,27 +978,28 @@ def parseAsdversion(content, parsedOutput):
                 else:
                     version = distro[i][match.start():match.end()]
                 if re.search("ser", distro[i]) and not re.search("tool", distro[i]):
-                    parsedOutput['server-version'] = version
-                    parsedOutput['package'] = dist
+                    build_data['server-version'] = version
+                    build_data['package'] = dist
                     distroFound = True
                 elif re.search("too", distro[i]):
-                    parsedOutput['tool-version'] = version
+                    build_data['tool-version'] = version
                     toolFound = True
                 elif re.search("amc", distro[i]) or re.search('management', distro[i]):
-                    parsedOutput['amc-version'] = version
+                    build_data['amc-version'] = version
                     amcFound = True
                 # in some cases the server version has format aerospike-3.5.14-27.x86_64.
                 # so grep for aerospike, if any of the previous conditions were not met.
                 elif (re.search("aerospike", distro[i]) or re.search('citrusleaf', distro[i])) \
                         and "x86_64" in distro[i] and 'client' not in distro[i]:
-                    parsedOutput['server-version'] = version
-                    parsedOutput['package'] = dist
+                    build_data['server-version'] = version
+                    build_data['package'] = dist
                     distroFound = True
                 else:
                     logging.debug("The line matches the regex but doesn't contain any valid versions " + distro[i])
 
     if not distroFound or not toolFound:
         logging.warning("Asd Version string not present in JSON.")
+    parsedOutput[final_section_name_1] = build_data
 
     
 # output: {in_aws: AAA, instance_type: AAA}
@@ -1678,6 +1762,9 @@ def parseAsSection(sectionList, content, parsedOutput):
 
         elif section == 'sindex_info':
             parseSindexInfoSection(nodes, content, parsedOutput)
+
+        elif section == 'features':
+            parseFeaturesInfoSection(nodes, content, parsedOutput)
 
         else:
             logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST.")

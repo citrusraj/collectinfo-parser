@@ -2,7 +2,7 @@ import os
 import json
 import re
 import logging
-import section_filter_list
+from . import section_filter_list
 
 
 # Section filter list.
