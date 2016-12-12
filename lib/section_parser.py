@@ -555,7 +555,7 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
                 for i in range(len(jsonArrays)):
                     # Order of nodeids and the values for each key is assumed to be same here.
                     if(index >= length):
-                        logging.warning("Number of values do not match the cluster size, Values : " + str(index+1) + ", " + str(length))
+                        logging.warning("Number of values do not match the cluster data array index, Values : " + str(index) + ", " + str(length))
                         break
                     if currentSection == "":
                         jsonArrays[i][key] = vals[index]
@@ -901,7 +901,16 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
     typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
+<<<<<<< HEAD
 def parseFeatures(nodes, content, parsedOutput):
+=======
+
+##  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Features~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
+##  "NODE           :   192.168.16.174:3000   192.168.16.175:3000   192.168.16.176:3000   \n",
+##  "AGGREGATION    :   NO                    NO                    NO                    \n",
+##  "BATCH          :   NO                    NO                    NO                    \n",
+def parseFeaturesInfoSection(nodes, content, parsedOutput):
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
     sec_id = 'ID_87'
     raw_section_name, final_section_name = getSectionNameFromId(sec_id)
 
@@ -910,17 +919,23 @@ def parseFeatures(nodes, content, parsedOutput):
         logging.warning("Null section json")
         return
 
+<<<<<<< HEAD
     initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
     featurelist = ['KVS', 'UDF', 'BATCH', 'SCAN', 'SINDEX', 'QUERY', 'AGGREGATION', 'LDT', 'XDR ENABLED', 'XDR DESTINATION']
     if raw_section_name not in content:
         logging.warning(raw_section_name + " section not present.")
         parseFeaturesFromStats(nodes, content, parsedOutput, final_section_name)
+=======
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
         return
 
     if len(content[raw_section_name]) > 1:
         logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
     
     
+<<<<<<< HEAD
     featureSection = content[raw_section_name][0]
     iplist, featureobj = parseFeaturesInfoSection(featureSection)
     if len(featureobj) != 0:
@@ -947,6 +962,13 @@ def parseFeatures(nodes, content, parsedOutput):
 ##  "AGGREGATION    :   NO                    NO                    NO                    \n",
 ##  "BATCH          :   NO                    NO                    NO                    \n",
 def parseFeaturesInfoSection(featureSection):
+=======
+    featuredata = {}
+    featureSection = content[raw_section_name][0]
+
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
+
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
     startSec = False
     iplist = None
     featureobj = []
@@ -963,6 +985,7 @@ def parseFeaturesInfoSection(featureSection):
             continue
         if startSec and iplist:
             datalist = line.rstrip().split(':', 1)
+<<<<<<< HEAD
             if len(datalist) != 2:
                 continue
             key = datalist[0].rstrip()
@@ -1132,6 +1155,20 @@ def parseFeaturesFromStats(nodes, content, parsedOutput, section_name):
         parsedOutput[node][section_name] = featureobj
 
    
+=======
+            key = datalist[0].rstrip()
+            fetlist = datalist[1].split()
+            for index, fet in enumerate(fetlist):
+                featureobj[index][key] = fet
+
+    for index, ip in enumerate(iplist):
+        for node in parsedOutput:
+            if ip in node:
+                parsedOutput[node][final_section_name] = featureobj[index]
+    
+    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
 
 def parseAsdversion(content, parsedOutput):
     sec_id_1 = 'ID_27'
@@ -1170,11 +1207,17 @@ def parseAsdversion(content, parsedOutput):
                 else:
                     version = distro[i][match.start():match.end()]
                 if re.search("ser", distro[i]) and not re.search("tool", distro[i]):
+<<<<<<< HEAD
                     if 'server-version' not in build_data or build_data['server-version'] < version:
                         build_data['server-version'] = version
                         build_data['package'] = dist
                         distroFound = True
 
+=======
+                    build_data['server-version'] = version
+                    build_data['package'] = dist
+                    distroFound = True
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
                 elif re.search("too", distro[i]):
                     build_data['tool-version'] = version
                     toolFound = True
@@ -1183,8 +1226,13 @@ def parseAsdversion(content, parsedOutput):
                     amcFound = True
                 # in some cases the server version has format aerospike-3.5.14-27.x86_64.
                 # so grep for aerospike, if any of the previous conditions were not met.
+<<<<<<< HEAD
                 elif not distroFound and ((re.search("aerospike", distro[i]) or re.search('citrusleaf', distro[i])) \
                         and "x86_64" in distro[i] and 'client' not in distro[i]):
+=======
+                elif (re.search("aerospike", distro[i]) or re.search('citrusleaf', distro[i])) \
+                        and "x86_64" in distro[i] and 'client' not in distro[i]:
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
                     build_data['server-version'] = version
                     build_data['package'] = dist
                     distroFound = True
@@ -1952,7 +2000,11 @@ def parseAsSection(sectionList, content, parsedOutput):
             parseSindexInfoSection(nodes, content, parsedOutput)
 
         elif section == 'features':
+<<<<<<< HEAD
             parseFeatures(nodes, content, parsedOutput)
+=======
+            parseFeaturesInfoSection(nodes, content, parsedOutput)
+>>>>>>> 3645f58646435e484ade301b16fdba7a0fa7d454
 
         else:
             logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST.")
