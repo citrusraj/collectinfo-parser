@@ -7,18 +7,19 @@ import copy
 import shutil
 import string
 import logging
-import section_filter_list
+from . import section_filter_list
 
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'sec_par.log', level=logging.INFO)
 FILTER_LIST = section_filter_list.FILTER_LIST
-
+DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
 ###############################################################################
 ########################### Section parser Util func ##########################
 ###############################################################################
 def getSectionListForParsing(content, available_section):
     final_section_list = []
     content_section_list = []
+    content_section_list.extend(DERIVED_SECTION_LIST)
     if 'section_ids' not in content:
         logging.warning("`section_ids` section missing in section_json.")
         return final_section_list
@@ -102,6 +103,8 @@ def typeCheckRawAll(nodes, sectionName, parsedOutput):
         if sectionName in parsedOutput[node]:
             typeCheckFieldAndRawValues(parsedOutput[node][sectionName])
 
+
+
 # Aerospike doesn't send float values
 # pretty print and other cpu stats can send float
 def typeCheckFieldAndRawValues(section):
@@ -115,7 +118,11 @@ def typeCheckFieldAndRawValues(section):
             for item in section[key]:
                 typeCheckFieldAndRawValues(item)
         
-        elif isinstance(section[key], str):
+        else:
+            if isinstance(section[key], list) or isinstance(section[key], int) \
+                or isinstance(section[key], bool) or isinstance(section[key], float):
+                    continue
+
             if section[key] is None:
                 logging.warning("Value for key " + key + " is Null")
                 continue
@@ -159,12 +166,10 @@ def typeCheckFieldAndRawValues(section):
                     number = strToNumber(num)
                     section[key] = -1 * number
 
-        # continue for all int, float and bools
-        else:
-            continue
 
     for key in keys:
         section.pop(key, None)
+
 
 
 # This should check only raw values.
@@ -182,9 +187,12 @@ def typeCheckBasicValues(section):
             for item in section[key]:
                 typeCheckBasicValues(item)
 
-        elif isinstance(section[key], str):
+        else:
             if '.' in key:
                 malformedkeys.append(key)
+            if isinstance(section[key], list) or isinstance(section[key], int) \
+                or isinstance(section[key], bool) or isinstance(section[key], float):
+                    continue
             elif section[key] is None:
                 logging.info("Value for key " + key + " is Null")
                 continue
@@ -208,9 +216,6 @@ def typeCheckBasicValues(section):
                     number = strToNumber(num)
                     section[key] = -1 * number
 
-        # continue for all int, float and bools
-        else:
-            continue
 
     for key in malformedkeys:
         newkey = key.replace('.', '_')
@@ -220,13 +225,31 @@ def typeCheckBasicValues(section):
 
 
 
-def getClusterSize(stats):
+def getClusterSize(content):
+    # statistics section
+    sec_id = 'ID_11'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Getting cluster size")
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    stats = content[raw_section_name][0]
     totalStats = len(stats)
     for i in range(totalStats):
         if 'cluster_size' in stats[i]:
             cluster_size_list = stats[i].split( )
             for cluster_size in cluster_size_list:
-                if isinstance(cluster_size, int):
+                #if isinstance(cluster_size, int):
+                if cluster_size.isdigit():
                     return int(cluster_size)
             return int(0)
 
@@ -247,15 +270,20 @@ def identifyNamespace(content):
     del1 = False
     del2 = False
     nsList = []
+    nsid = 0
     skiplines = 3
     for i in range(len(namespace)):
+        if 'Node' in namespace[i] and 'Namespace' in namespace[i]:
+            tokList = namespace[i].split()
+            if 'Node' in tokList[0]:
+                nsid = 1
         if "Number of" in namespace[i] or "No. " in namespace[i]:
             # End of Section
             break
-        if "~~~~Name" in Namespace[i]:
+        if "~~~~Name" in namespace[i]:
             del1 = True
             continue
-        elif "=== NAME" in Namespace[i]:
+        elif "=== NAME" in namespace[i]:
             del2 = True
             continue
         if del1 or del2:
@@ -264,7 +292,7 @@ def identifyNamespace(content):
                 continue
         if del1:
             # Leave 3 lines and get unique list of ns
-            ns = namespace[i].split()[0]
+            ns = namespace[i].split()[nsid]
             nsList.append(ns)
         if del2:
             # Leave 3 lines and get unique list of ns (ip/ns)
@@ -275,17 +303,20 @@ def identifyNamespace(content):
     return unqNsList
         
 
+
 def identifyNodes(content):
-    nodes = getNodesFromLatencyInfo(content)
-    if not nodes or len(nodes) == 0:
-        logging.warning("couldn't find nodes from latency section.")
-        nodes = getNodesFromNetworkInfo(content)
-        if not nodes or len(nodes) == 0:
-            logging.warning("couldn't find nodes from info_network section.")
-        else:
-            return nodes
+    nodes1 = getNodesFromLatencyInfo(content)
+    nodes2 = getNodesFromNetworkInfo(content)
+    if nodes1 and nodes2:
+        return (nodes1 if len(nodes1) > len(nodes2) else nodes2)
+    elif nodes1:
+        return nodes1
+    elif nodes2:
+        return nodes2
     else:
-        return nodes
+        logging.warning("couldn't find nodes from latency section and info_network section.")
+        return None
+
 
 
 def getNodesFromLatencyInfo(content):
@@ -345,8 +376,16 @@ def getNodesFromNetworkInfo(content):
     network_info = content[raw_section_name][0]
     del_found = False
     nodes = []
+    nodeid = 0
     skip_lines = 2
     for i in range(len(network_info)):
+        if 'Node' in network_info[i]:
+            if 'Cluster' in network_info[i].split()[0]:
+                if 'Node' in network_info[i].split()[1]:
+                    nodeid = 1
+                else:
+                    raise Exception("New format of Network info detected. can not get nodeids")
+            continue
         if "~~~~~~~" in network_info[i] or  "====" in network_info[i]:
             del_found = True
             continue
@@ -356,12 +395,12 @@ def getNodesFromNetworkInfo(content):
         if  del_found:
             if skip_lines == 0:
                 # Get node ip
-                nodeLine = network_info[i].split(' ')
-                if nodeLine[0] is ' ' or nodeLine[0] is '.':
+                nodeLine = network_info[i].split()
+                if nodeLine[nodeid].rstrip() is '' or nodeLine[nodeid] is '.':
                     logging.warning("NodeId absent in info_network section line" + network_info[i])
                     continue
                 else:
-                    nodes.append(nodeLine[0])
+                    nodes.append(nodeLine[nodeid])
 
             else:
                 skip_lines = skip_lines - 1
@@ -491,8 +530,8 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
             # print warning if the len(row) != 2.
             if len(row) != 2:
                 log.warning("MultiColumn Format Anamoly. A line contains unexpected entries : " + str(len(row)))
-            key = row[0].split()[0]
-            vals = row[1].split( )
+            key = row[0].rstrip().split()[0]
+            vals = row[1].rstrip().split()
             length = len(vals)
             # Here "NODE" is hardcoded to find the row containing nodeids.
             # TODO is there a better way to do it than hardcoding.
@@ -516,7 +555,7 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
                 for i in range(len(jsonArrays)):
                     # Order of nodeids and the values for each key is assumed to be same here.
                     if(index >= length):
-                        logging.warning("Number of values do not match the cluster size, Values : " + str(length) + " index " + str(index))
+                        logging.warning("Number of values do not match the cluster size, Values : " + str(index+1) + ", " + str(length))
                         break
                     if currentSection == "":
                         jsonArrays[i][key] = vals[index]
@@ -528,8 +567,8 @@ def parseMultiColumnFormat(content, parsedOutput, sectionName):
                         jsonArrays[i][currentSection][key] = vals[index]
                     index += 1
                     #warn in case len(val) > Cluster_size(no of nodes in the cluster).
-                if index != length:
-                    logging.warning("Number of values are lesser than cluster size, values : " + str(length))
+                if len(jsonArrays) != length:
+                    logging.warning("Number of values and cluster size doesn't match. cluster_size, values: " + str(len(jsonArrays)) + "," + str(length))
             # If we crossed the section delimiter, initialize a new dictionary for this new section in node's dictionary.
             elif not currentSection:
                 logging.warning("Data is present before a sub-section delimiter and thus data can't be associated with a sub-section")
@@ -770,7 +809,7 @@ def parseLatencySection(nodes, content, parsedOutput):
             keys = getHistogramKeys(latency[i])
         else:
             nodeId = getNodeId(latency[i])
-            logging.info("Got nodeId: " + str(nodeId))
+            logging.debug("Got nodeId: " + str(nodeId))
             if nodeId is None and len(latency[i]) > 2:
                 logging.warning("NodeId is None " + str(latency[i]))
                 continue
@@ -862,6 +901,238 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
     typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
+def parseFeatures(nodes, content, parsedOutput):
+    sec_id = 'ID_87'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    initNodesForParsedJson(nodes, content, parsedOutput, final_section_name)
+    featurelist = ['KVS', 'UDF', 'BATCH', 'SCAN', 'SINDEX', 'QUERY', 'AGGREGATION', 'LDT', 'XDR ENABLED', 'XDR DESTINATION']
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        parseFeaturesFromStats(nodes, content, parsedOutput, final_section_name)
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+    
+    
+    featureSection = content[raw_section_name][0]
+    iplist, featureobj = parseFeaturesInfoSection(featureSection)
+    if len(featureobj) != 0:
+        badkeys = []
+        for key in featureobj[0].keys():
+            if key not in featurelist:
+                if isBool(featureobj[0][key]):
+                    raise Exception("Feature list changed. Please check feature list section. key: " + key + " featurelist: " + str(featurelist))
+                else:
+                    "invalid literal for int() with base 10: 'partition'\n"
+                    badkeys.append(key)
+        for key in badkeys:
+            featureobj[0].pop(key, None)
+
+    for index, ip in enumerate(iplist):
+        for node in parsedOutput:
+            if ip in node:
+                parsedOutput[node][final_section_name] = featureobj[index]
+ 
+
+
+##  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Features~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
+##  "NODE           :   192.168.16.174:3000   192.168.16.175:3000   192.168.16.176:3000   \n",
+##  "AGGREGATION    :   NO                    NO                    NO                    \n",
+##  "BATCH          :   NO                    NO                    NO                    \n",
+def parseFeaturesInfoSection(featureSection):
+    startSec = False
+    iplist = None
+    featureobj = []
+    for line in featureSection:
+        if line.rstrip() == '':
+            continue
+        if '~~~' in line:
+            startSec = True
+            continue
+        if startSec and 'NODE' in line:
+            iplist = line.rstrip().split(':', 1)[1].split()
+            for i in range(len(iplist)):
+                featureobj.append({})
+            continue
+        if startSec and iplist:
+            datalist = line.rstrip().split(':', 1)
+            if len(datalist) != 2:
+                continue
+            key = datalist[0].rstrip()
+            fetlist = datalist[1].split()
+            if len(fetlist) != len(iplist):
+                continue
+            for index, fet in enumerate(fetlist):
+                featureobj[index][key] = fet
+
+    return iplist, featureobj
+    #typeCheckRawAll(nodes, final_section_name, parsedOutput)
+
+
+def statExistInStatistics(statmap, statlist):
+    if not statmap:
+        return False
+    if not statlist or len(statlist) == 0:
+        return True
+    for stat in statlist:
+        if stat in statmap and statmap[stat] and not isinstance(statmap[stat], str) and statmap[stat] > 0:
+            return True
+    return False
+
+
+
+def isStatParsed(nodes, parsedOutput):
+    sec_id = 'ID_11'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    for node in parsedOutput:
+        if final_section_name in parsedOutput[node]:
+            return True
+    return False
+            
+        
+
+def parseFeaturesFromStats(nodes, content, parsedOutput, section_name):
+    # check for 'statistics' section.
+    sec_id = 'ID_11'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Getting cluster size")
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if not isStatParsed(nodes, parsedOutput):
+        parseStatSection(nodes, content, parsedOutput)
+
+    if not isStatParsed(nodes, parsedOutput):
+        logging.warning("Statistics not present. can not get feature.")
+        return
+
+    for node in parsedOutput:
+        service_map = None
+        ns_map = None
+        service_sec = 'service'
+        ns_sec = 'Namespace'
+
+        featureobj = {'KVS':'NO', 'UDF':'NO', 'BATCH':'NO', 'SCAN':'NO', 'SINDEX':'NO', 'QUERY':'NO', 'AGGREGATION':'NO', 'LDT':'NO', 'XDR ENABLED':'NO', 'XDR DESTINATION':'NO'}
+        if final_section_name in parsedOutput[node] and service_sec in parsedOutput[node][final_section_name]:
+            service_map = parsedOutput[node][final_section_name][service_sec]
+
+        if final_section_name in parsedOutput[node] and ns_sec in parsedOutput[node][final_section_name]:
+            ns_map = parsedOutput[node][final_section_name][ns_sec]
+
+        if statExistInStatistics(service_map, ['stat_read_reqs','stat_write_reqs']):
+            featureobj['KVS'] = 'YES'
+
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['client_read_error','client_read_success','client_write_error','client_write_success']):
+                        featureobj['KVS'] = 'YES'
+                        break
+
+        if statExistInStatistics(service_map, ['udf_read_reqs','udf_write_reqs']):
+            featureobj['UDF'] = 'YES'
+
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['client_udf_complete','client_udf_error']):
+                        featureobj['UDF'] = 'YES'
+                        break
+
+
+
+        if statExistInStatistics(service_map, ['batch_initiate','batch_index_initiate']):
+            featureobj['BATCH'] = 'YES'
+
+        if statExistInStatistics(service_map, ['tscan_initiate','basic_scans_succeeded','basic_scans_failed','aggr_scans_succeeded'\
+                                                'aggr_scans_failed','udf_bg_scans_succeeded','udf_bg_scans_failed']):
+            featureobj['SCAN'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['scan_basic_complete','scan_basic_error','scan_aggr_complete',\
+                                                    'scan_aggr_error','scan_udf_bg_complete','scan_udf_bg_error']):
+                        featureobj['SCAN'] = 'YES'
+                        break
+
+
+        if statExistInStatistics(service_map, ['sindex-used-bytes-memory']):
+            featureobj['SINDEX'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['memory_used_sindex_bytes']):
+                        featureobj['SINDEX'] = 'YES'
+                        break
+
+
+        if statExistInStatistics(service_map, ['query_reqs','query_success']):
+            featureobj['QUERY'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['query_reqs','query_success']):
+                        featureobj['QUERY'] = 'YES'
+                        break
+
+
+        if statExistInStatistics(service_map, ['query_agg','query_agg_success']):
+            featureobj['AGGREGATION'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['query_agg','query_agg_success']):
+                        featureobj['AGGREGATION'] = 'YES'
+                        break
+
+
+        if statExistInStatistics(service_map, ['sub-records','ldt-writes','ldt-reads','ldt-deletes'
+                                                ,'ldt_writes','ldt_reads','ldt_deletes','sub_objects']):
+            featureobj['LDT'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['ldt-writes','ldt-reads','ldt-deletes','ldt_writes','ldt_reads','ldt_deletes']):
+                        featureobj['LDT'] = 'YES'
+                        break
+
+
+        if statExistInStatistics(service_map, ['stat_read_reqs_xdr','xdr_read_success','xdr_read_error']):
+            featureobj['XDR ENABLED'] = 'YES'
+
+        if statExistInStatistics(service_map, ['stat_write_reqs_xdr']):
+            featureobj['XDR DESTINATION'] = 'YES'
+        elif ns_map:
+            for namespace in ns_map:
+                if service_sec in ns_map[namespace]:
+                    ns_service_map = ns_map[namespace][service_sec]
+                    if statExistInStatistics(ns_service_map, ['xdr_write_success']):
+                        featureobj['XDR DESTINATION'] = 'YES'
+                        break
+        parsedOutput[node][section_name] = featureobj
+
+   
+
 def parseAsdversion(content, parsedOutput):
     sec_id_1 = 'ID_27'
     raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
@@ -883,39 +1154,46 @@ def parseAsdversion(content, parsedOutput):
     distroFound = False
     toolFound = False
     amcFound = False
+    build_data = {}
+    build_data['edition'] = 'EE'
     verRegex = "[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}"
     for dist in [raw_section_name_1, raw_section_name_2]:
         if dist in content:
             distro = content[dist][0]
             for i in range(len(distro)):
+                if re.search("community", distro[i]):
+                    build_data['edition'] = 'CE'
                 match = re.search(verRegex, distro[i])
-                version = ' '
+                version = ''
                 if not match:
                     continue
                 else:
                     version = distro[i][match.start():match.end()]
                 if re.search("ser", distro[i]) and not re.search("tool", distro[i]):
-                    parsedOutput['server-version'] = version
-                    parsedOutput['package'] = dist
-                    distroFound = True
+                    if 'server-version' not in build_data or build_data['server-version'] < version:
+                        build_data['server-version'] = version
+                        build_data['package'] = dist
+                        distroFound = True
+
                 elif re.search("too", distro[i]):
-                    parsedOutput['tool-version'] = version
+                    build_data['tool-version'] = version
                     toolFound = True
                 elif re.search("amc", distro[i]) or re.search('management', distro[i]):
-                    parsedOutput['amc-version'] = version
+                    build_data['amc-version'] = version
                     amcFound = True
                 # in some cases the server version has format aerospike-3.5.14-27.x86_64.
                 # so grep for aerospike, if any of the previous conditions were not met.
-                elif (re.search("aerospike", distro[i]) or re.search('citrusleaf', distro[i])) \
-                        and "x86_64" in distro[i] and 'client' not in distro[i]:
-                    parsedOutput['server-version'] = version
-                    parsedOutput['package'] = dist
+                elif not distroFound and ((re.search("aerospike", distro[i]) or re.search('citrusleaf', distro[i])) \
+                        and "x86_64" in distro[i] and 'client' not in distro[i]):
+                    build_data['server-version'] = version
+                    build_data['package'] = dist
                     distroFound = True
                 else:
                     logging.debug("The line matches the regex but doesn't contain any valid versions " + distro[i])
 
     if not distroFound or not toolFound:
         logging.warning("Asd Version string not present in JSON.")
+    parsedOutput[final_section_name_1] = build_data
 
     
 # output: {in_aws: AAA, instance_type: AAA}
@@ -1109,11 +1387,11 @@ def parseTopSection(content, parsedOutput):
             topdata['tasks']['running'] = matchobj_2.group(2)
             topdata['tasks']['sleeping'] = matchobj_2.group(3)
         elif matchobj_3:
-            topdata['cpu_utilization']['user'] = matchobj_3.group(1)
-            topdata['cpu_utilization']['system'] = matchobj_3.group(2)
+            topdata['cpu_utilization']['us'] = matchobj_3.group(1)
+            topdata['cpu_utilization']['sy'] = matchobj_3.group(2)
             topdata['cpu_utilization']['ni'] = matchobj_3.group(3)
-            topdata['cpu_utilization']['ideal'] = matchobj_3.group(4)
-            topdata['cpu_utilization']['wait'] = matchobj_3.group(5)
+            topdata['cpu_utilization']['id'] = matchobj_3.group(4)
+            topdata['cpu_utilization']['wa'] = matchobj_3.group(5)
             topdata['cpu_utilization']['hi'] = matchobj_3.group(6)
             topdata['cpu_utilization']['si'] = matchobj_3.group(7)
             topdata['cpu_utilization']['st'] = matchobj_3.group(8)
@@ -1605,9 +1883,6 @@ def parseIPAddrSection(content, parsedOutput):
 
 def parseSysSection(sectionList, content, parsedOutput):
     logging.info("Parse sys stats.")
-    if len(sectionList) == 0:
-        logging.info("Empty section list.")
-        return
     for section in sectionList:
 
         if section == 'top':
@@ -1657,9 +1932,6 @@ def parseSysSection(sectionList, content, parsedOutput):
 def parseAsSection(sectionList, content, parsedOutput):
     # Parse As stat
     logging.info("Parse As stats.")
-    if len(sectionList) == 0:
-        logging.info("Empty section list.")
-        return
     nodes = identifyNodes(content)
     if not nodes:
         logging.warning("Node can't be identified. Can not parse")
@@ -1679,14 +1951,18 @@ def parseAsSection(sectionList, content, parsedOutput):
         elif section == 'sindex_info':
             parseSindexInfoSection(nodes, content, parsedOutput)
 
+        elif section == 'features':
+            parseFeatures(nodes, content, parsedOutput)
+
         else:
             logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST.")
         
-        if section in parsedOutput:
-            paramMap = {section: parsedOutput[section]}
-            logging.info("Converting basic raw string vals to original vals.")
-            typeCheckBasicValues(paramMap)
-            parsedOutput[section] = copy.deepcopy(paramMap[section])
+        for node in nodes:
+            if section in parsedOutput[node]:
+                paramMap = {section: parsedOutput[node][section]}
+                logging.info("Converting basic raw string vals to original vals.")
+                typeCheckBasicValues(paramMap)
+                parsedOutput[node][section] = copy.deepcopy(paramMap[section])
 
 
 

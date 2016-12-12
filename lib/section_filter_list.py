@@ -600,7 +600,8 @@ FILTER_LIST = {
     },
     'ID_87': {
         'enable': True,
-        'raw_section_name': "features'",
+        'raw_section_name': "features",
+        'final_section_name': "features",
         'regex_new': "'features'",
         # 'parser_func'
     },
@@ -687,5 +688,6 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-AS_SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info']
+AS_SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'features']
 SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
+DERIVED_SECTION_LIST = ['features']
