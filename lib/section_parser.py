@@ -1386,8 +1386,18 @@ def parseTopSection(content, parsedOutput):
         # "KiB Swap:        0 total,        0 used,        0 free. 52694652 cached Mem\n"
         matchobj_5 = re.match(r'.*Swap:.* (.*?) total.* (.*?) used.* (.*?) free.* (.*?) cached.*', line)
 
-        if matchobj_1:
-            topdata['uptime']['days'] = matchobj_1.group(1)
+        if 'up' in line and 'load' in line:
+            obj = re.match(r'.* (.*?):(.*?),.* load .*', line)
+            hr = 0
+            mn = 0
+            days = 0
+            if matchobj_1:
+                days = int(matchobj_1.group(1))
+            if obj:
+                hr = int(obj.group(1))
+                mn = int(obj.group(2))
+            topdata['uptime']['sec'] = (days * 24 * 60 * 60) + (hr * 60 * 60) + (mn * 60)
+            #topdata['uptime']['days'] = matchobj_1.group(1)
         elif matchobj_2:
             topdata['tasks']['total'] = matchobj_2.group(1)
             topdata['tasks']['running'] = matchobj_2.group(2)
@@ -1424,8 +1434,8 @@ def parseTopSection(content, parsedOutput):
                 topdata['asd_process']['virtual_memory'] = l[4]
                 topdata['asd_process']['resident_memory'] = l[5]
                 topdata['asd_process']['shared_memory'] = l[6]
-                topdata['asd_process']['%cpu'] = l[7]
-                topdata['asd_process']['%mem'] = l[8]
+                topdata['asd_process']['%cpu'] = l[8]
+                topdata['asd_process']['%mem'] = l[9]
                 for field in topdata['asd_process']:
                     if field == '%cpu' or field == '%mem':
                         continue
@@ -1436,8 +1446,8 @@ def parseTopSection(content, parsedOutput):
                 topdata['xdr_process']['virtual_memory'] = l[4]
                 topdata['xdr_process']['resident_memory'] = l[5]
                 topdata['xdr_process']['shared_memory'] = l[6]
-                topdata['xdr_process']['%cpu'] = l[7]
-                topdata['xdr_process']['%mem'] = l[8]
+                topdata['xdr_process']['%cpu'] = l[8]
+                topdata['xdr_process']['%mem'] = l[9]
                 for field in topdata['xdr_process']:
                     if field == '%cpu' or field == '%mem':
                         continue
@@ -1768,7 +1778,7 @@ def parseIOstatSection(content, parsedOutput):
             deviceobj = {}
             if 'avg-cpu' in line and 'user' in line:
                 avgcpuLine = True
-                sectok_cpuline = line.rstrip().split().
+                sectok_cpuline = line.rstrip().split()
                 if not cmpList(tok_cpuline, sectok_cpuline):
                     logging.error("iostat section format changed. old sec list: " + str(tok_cpuline) + " new sec list: " + str(sectok_cpuline))
                     return
