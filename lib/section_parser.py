@@ -1528,8 +1528,9 @@ def parseMeminfoSection(content, parsedOutput):
         if start_section_flag:
             # "MemTotal:       32653368 kB\n",
             keyval = line.split(':')
+            key = keyval[0].lower().replace(' ', '_')
             #meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
-            meminfodata[keyval[0]] = int(keyval[1].split()[0]) * 1024
+            meminfodata[key] = int(keyval[1].split()[0]) * 1024
     parsedOutput[final_section_name] = meminfodata
 
 
