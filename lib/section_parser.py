@@ -16,6 +16,12 @@ DERIVED_SECTION_LIST = section_filter_list.DERIVED_SECTION_LIST
 ###############################################################################
 ########################### Section parser Util func ##########################
 ###############################################################################
+def cmpList(list1, list2):
+    if len(list1) != len(list2) or len(set(list1).union(set(list2))) != len(list1):
+        return False
+    return True
+ 
+
 def getSectionListForParsing(content, available_section):
     final_section_list = []
     content_section_list = []
@@ -1418,7 +1424,11 @@ def parseTopSection(content, parsedOutput):
                 topdata['asd_process']['virtual_memory'] = l[4]
                 topdata['asd_process']['resident_memory'] = l[5]
                 topdata['asd_process']['shared_memory'] = l[6]
+                topdata['asd_process']['%cpu'] = l[7]
+                topdata['asd_process']['%mem'] = l[8]
                 for field in topdata['asd_process']:
+                    if field == '%cpu' or field == '%mem':
+                        continue
                     topdata['asd_process'][field] = getByteMemFromStr(topdata['asd_process'][field], 1)
             elif not xdr_flag and re.search('xdr', line):
                 xdr_flag = True
@@ -1426,7 +1436,11 @@ def parseTopSection(content, parsedOutput):
                 topdata['xdr_process']['virtual_memory'] = l[4]
                 topdata['xdr_process']['resident_memory'] = l[5]
                 topdata['xdr_process']['shared_memory'] = l[6]
+                topdata['xdr_process']['%cpu'] = l[7]
+                topdata['xdr_process']['%mem'] = l[8]
                 for field in topdata['xdr_process']:
+                    if field == '%cpu' or field == '%mem':
+                        continue
                     topdata['xdr_process'][field] = getByteMemFromStr(topdata['xdr_process'][field], 1)
     if kib_format:
         
@@ -1645,14 +1659,18 @@ def parseFreeMSection(content, parsedOutput):
  
 
     freeMData = {}
-    tokList = []
+    #tokList = []
+    tokList = ['total', 'used', 'free', 'shared', 'buffers', 'cached']
     startSec = False
 
     freeMSection = content[raw_section_name][0]
 
     for line in freeMSection:
         if 'total' in line and 'used' in line and 'free' in line:
-            tokList = line.rstrip().split()
+            sectokList = line.rstrip().split()
+            if not cmpList(tokList, sectokList):
+                logging.error("Free-m section format changed. old sec list: " + str(tokList) + " new sec list: " + str(sectokList))
+                return
             startSec = True
 
         if startSec and 'Mem:' in line:
@@ -1734,9 +1752,11 @@ def parseIOstatSection(content, parsedOutput):
     tokList = []
 
     avgcpuLine = False
-    tok_cpuline = []
+    #tok_cpuline = []
+    tok_cpuline = ['avg-cpu:', '%user', '%nice', '%system', '%iowait', '%steal', '%idle']
     deviceLine = False
-    tok_deviceline = []
+    #tok_deviceline = []
+    tok_deviceline = ['Device:', 'rrqm/s', 'wrqm/s', 'r/s', 'w/s', 'rsec/s', 'wsec/s', 'avgrq-sz', 'avgqu-sz', 'await', 'svctm', '%util']
 
     # Iterate over all instances and create list of maps
     for iostatSection in sectionList:
@@ -1747,13 +1767,19 @@ def parseIOstatSection(content, parsedOutput):
             deviceobj = {}
             if 'avg-cpu' in line and 'user' in line:
                 avgcpuLine = True
-                tok_cpuline = line.rstrip().split()
+                sectok_cpuline = line.rstrip().split().
+                if not cmpList(tok_cpuline, sectok_cpuline):
+                    logging.error("iostat section format changed. old sec list: " + str(tok_cpuline) + " new sec list: " + str(sectok_cpuline))
+                    return
                 continue
             
             if 'Device:' in line and 'rrqm/s' in line:
                 avgcpuLine = False
                 deviceLine = True
-                tok_deviceline = line.rstrip().split()
+                sectok_deviceline = line.rstrip().split()
+                if not cmpList(tok_deviceline, sectok_deviceline):
+                    logging.error("iostat section format changed. old sec list: " + str(tok_deviceline) + " new sec list: " + str(sectok_deviceline))
+                    return
                 continue
 
 
