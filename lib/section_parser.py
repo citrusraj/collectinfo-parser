@@ -194,7 +194,7 @@ def typeCheckBasicValues(section):
                 typeCheckBasicValues(item)
 
         else:
-            if '.' in key:
+            if '.' in key or ' ' in key:
                 malformedkeys.append(key)
             if isinstance(section[key], list) or isinstance(section[key], int) \
                 or isinstance(section[key], bool) or isinstance(section[key], float):
@@ -224,7 +224,7 @@ def typeCheckBasicValues(section):
 
 
     for key in malformedkeys:
-        newkey = key.replace('.', '_')
+        newkey = key.replace('.', '_').replace(' ', '_')
         val = section[key]
         section.pop(key, None)
         section[newkey] = val
@@ -1340,6 +1340,35 @@ def replaceComma(datamap):
                     datamap[index] = datamap[index].replace(',', '.') if datamap[index].replace(',', '').isdigit() else datamap[index]
 
 
+def parseTopLine(line, del1, del2):
+    dataobj = {}
+    lineobj = line.rstrip().split(':')
+    if len(lineobj) != 2:
+        return None
+    line = lineobj[1]
+    kvObjList = line.rstrip().split(del1)
+    for obj in kvObjList:
+        keyval = []
+        for d in del2:
+            keyval =  obj.strip(' ').split(d)
+            if len(keyval) == 2:
+                break
+        if len(keyval) == 2:
+            dataobj[keyval[1]] = keyval[0]
+    return dataobj
+
+# Match object to get uptime in days.
+# "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
+# Match object to get total task running.
+# "Tasks: 149 total,   1 running, 148 sleeping,   0 stopped,   0 zombie\n"
+# Match object to get cpu utilization info.
+# "%Cpu(s): 11.3 us,  1.0 sy,  0.0 ni, 85.0 id,  1.7 wa,  0.0 hi,  0.7 si,  0.3 st\n"
+# Match object to get RAM info.
+# "KiB Mem:  62916356 total, 54829756 used,  8086600 free,   194440 buffers\n"
+# Match object to get Swap Mem info.
+# "KiB Swap:        0 total,        0 used,        0 free. 52694652 cached Mem\n"
+
+
 def parseTopSection(content, parsedOutput):
     sec_id = 'ID_36'
     raw_section_name, final_section_name = getSectionNameFromId(sec_id)
@@ -1375,33 +1404,177 @@ def parseTopSection(content, parsedOutput):
         matchobj_1 = re.match(r'.*up (.*?) days.*', line)
         # Match object to get total task running.
         # "Tasks: 149 total,   1 running, 148 sleeping,   0 stopped,   0 zombie\n"
-        matchobj_2 = re.match(r'Tasks.* (.*?) total.* (.*?) running.* (.*?) sleeping.*', line)
         # Match object to get cpu utilization info.
         # "%Cpu(s): 11.3 us,  1.0 sy,  0.0 ni, 85.0 id,  1.7 wa,  0.0 hi,  0.7 si,  0.3 st\n"
-        matchobj_3 = re.match(r'.*Cpu.* (.*?).us.* (.*?).sy.* (.*?).ni.* (.*?).id.* (.*?).wa.* (.*?).hi.* (.*?).si.* (.*?).st.*', line)
         # Match object to get RAM info.
         # "KiB Mem:  62916356 total, 54829756 used,  8086600 free,   194440 buffers\n"
-        matchobj_4 = re.match(r'.*Mem:.* (.*?) total.* (.*?) used.* (.*?) free.* (.*?) buffers.*', line)
         # Match object to get Swap Mem info.
         # "KiB Swap:        0 total,        0 used,        0 free. 52694652 cached Mem\n"
-        matchobj_5 = re.match(r'.*Swap:.* (.*?) total.* (.*?) used.* (.*?) free.* (.*?) cached.*', line)
+        matchobj_2 = re.match(r'.*Swap:.* (.*?).total.* (.*?).used.* (.*?).free.* (.*?).ca.*', line)
+        matchobj_3 = re.match(r'.*Swap:.* (.*?).total.* (.*?).free.* (.*?).used.* (.*?).av.*', line)
+        obj = None
 
         if 'up' in line and 'load' in line:
-            obj = re.match(r'.* (.*?):(.*?),.* load .*', line)
+            obj1 = re.match(r'.*up.* (.*?):(.*?),.* load .*', line)
+            obj2 = re.match(r'.* (.*?) min', line)
             hr = 0
             mn = 0
             days = 0
             if matchobj_1:
                 days = int(matchobj_1.group(1))
-            if obj:
-                hr = int(obj.group(1))
-                mn = int(obj.group(2))
+            if obj1:
+                hr = int(obj1.group(1))
+                mn = int(obj1.group(2))
+            if obj2:
+                mn = int(obj2.group(1))
+
+            topdata['uptime']['seconds'] = (days * 24 * 60 * 60) + (hr * 60 * 60) + (mn * 60)
+            #topdata['uptime']['days'] = matchobj_1.group(1)
+
+        if re.search(r'Tasks.*total', line):
+            obj = parseTopLine(line, ',', [' '])
+            topdata['tasks'] = obj
+
+        elif re.search(r'Cpu.*us', line):
+            obj = parseTopLine(line, ',', [' ', '%'])
+            topdata['cpu_utilization'] = obj
+
+        elif re.search(r'Mem.*total', line):
+            obj = parseTopLine(line, ',', [' ', '+'])
+            topdata['ram'] = obj
+            for mem in topdata['ram']:
+                topdata['ram'][mem] = getByteMemFromStr(topdata['ram'][mem], 1)
+
+        elif matchobj_2 or matchobj_3:
+            if matchobj_2:
+                topdata['swap']['total'] = matchobj_2.group(1)
+                topdata['swap']['used'] = matchobj_2.group(2)
+                topdata['swap']['free'] = matchobj_2.group(3)
+                topdata['swap']['cached'] = matchobj_2.group(4)
+            elif matchobj_3:
+                topdata['swap']['total'] = matchobj_3.group(1)
+                topdata['swap']['free'] = matchobj_3.group(2)
+                topdata['swap']['used'] = matchobj_3.group(3)
+                topdata['swap']['avail'] = matchobj_3.group(4)
+            for mem in topdata['swap']:
+                topdata['swap'][mem] = getByteMemFromStr(topdata['swap'][mem], 1)
+ 
+        else:
+            # Break, If we found data for both process.
+            # Also break if it chacked more the top 15 process.
+            if (asd_flag and xdr_flag) or index > 25:
+                break
+            # "  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND\n"
+            # "26937 root      20   0 59.975g 0.049t 0.048t S 117.6 83.9 164251:27 asd\n"
+            if not asd_flag and re.search('asd', line):
+                asd_flag = True
+                l = re.split('\ +', line)
+                topdata['asd_process']['virtual_memory'] = l[4]
+                topdata['asd_process']['resident_memory'] = l[5]
+                topdata['asd_process']['shared_memory'] = l[6]
+                topdata['asd_process']['%cpu'] = l[8]
+                topdata['asd_process']['%mem'] = l[9]
+                for field in topdata['asd_process']:
+                    if field == '%cpu' or field == '%mem':
+                        continue
+                    topdata['asd_process'][field] = getByteMemFromStr(topdata['asd_process'][field], 1)
+            elif not xdr_flag and re.search('xdr', line):
+                xdr_flag = True
+                l = re.split('\ +', line)
+                topdata['xdr_process']['virtual_memory'] = l[4]
+                topdata['xdr_process']['resident_memory'] = l[5]
+                topdata['xdr_process']['shared_memory'] = l[6]
+                topdata['xdr_process']['%cpu'] = l[8]
+                topdata['xdr_process']['%mem'] = l[9]
+                for field in topdata['xdr_process']:
+                    if field == '%cpu' or field == '%mem':
+                        continue
+                    topdata['xdr_process'][field] = getByteMemFromStr(topdata['xdr_process'][field], 1)
+    if kib_format:
+        
+        for key in topdata['ram']:
+            topdata['ram'][key] = topdata['ram'][key] * 1024
+        for key in topdata['swap']:
+            topdata['swap'][key] = topdata['swap'][key] * 1024
+    replaceComma(topdata)
+    datalist = ['tasks', 'cpu_utilization', 'ram', 'swap']
+    for sec in datalist:
+        if not topdata[sec] or len(topdata[sec]) == 0:
+            logging.error("Top format chaned. data could be missing. section: " + str(sec) )
+    parsedOutput[final_section_name] = topdata
+
+
+
+
+def parseTopSectionOld(content, parsedOutput):
+    sec_id = 'ID_36'
+    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+
+    topdata = {'uptime': {}, 'tasks': {}, 'cpu_utilization': {}, 'ram': {}, 'swap': {}, 'asd_process': {}, 'xdr_process': {}}
+    topSection = content[raw_section_name][0]
+    asd_flag = False
+    xdr_flag = False
+    kib_format = False
+    for index, line in enumerate(topSection):
+        line = line.strip()
+        if re.search('top -n3 -b', line):
+            continue
+
+        if 'KiB' in line:
+            kib_format = True
+
+        # Match object to get uptime in days.
+        # "top - 18:56:45 up 103 days, 13:00,  2 users,  load average: 1.29, 1.34, 1.35\n"
+        matchobj_1 = re.match(r'.*up (.*?) days.*', line)
+        # Match object to get total task running.
+        # "Tasks: 149 total,   1 running, 148 sleeping,   0 stopped,   0 zombie\n"
+        matchobj_2 = re.match(r'Tasks.* (.*?).total.* (.*?).running.* (.*?).sleeping.* (.*?).stopped.* (.*?).zombie', line)
+        # Match object to get cpu utilization info.
+        # "%Cpu(s): 11.3 us,  1.0 sy,  0.0 ni, 85.0 id,  1.7 wa,  0.0 hi,  0.7 si,  0.3 st\n"
+        matchobj_3 = re.match(r'.*Cpu.* (.*?).us.* (.*?).sy.* (.*?).ni.* (.*?).id.* (.*?).wa.* (.*?).hi.* (.*?).si.* (.*?).st.*', line)
+        # Match object to get RAM info.
+        # "KiB Mem:  62916356 total, 54829756 used,  8086600 free,   194440 buffers\n"
+        matchobj_4 = re.match(r'.*Mem:.* (.*?).total.* (.*?).used.* (.*?).free.* (.*?).buffers.*', line)
+        # Match object to get Swap Mem info.
+        # "KiB Swap:        0 total,        0 used,        0 free. 52694652 cached Mem\n"
+        matchobj_5 = re.match(r'.*Swap:.* (.*?).total.* (.*?).used.* (.*?).free.* (.*?).cached.*', line)
+
+        if 'up' in line and 'load' in line:
+
+            obj1 = re.match(r'.*up.* (.*?):(.*?),.* load .*', line)
+            obj2 = re.match(r'.* (.*?) min', line)
+            hr = 0
+            mn = 0
+            days = 0
+            if matchobj_1:
+                days = int(matchobj_1.group(1))
+            if obj1:
+                hr = int(obj1.group(1))
+                mn = int(obj1.group(2))
+            if obj2:
+                mn = int(obj2.group(1))
+
             topdata['uptime']['sec'] = (days * 24 * 60 * 60) + (hr * 60 * 60) + (mn * 60)
             #topdata['uptime']['days'] = matchobj_1.group(1)
         elif matchobj_2:
             topdata['tasks']['total'] = matchobj_2.group(1)
             topdata['tasks']['running'] = matchobj_2.group(2)
             topdata['tasks']['sleeping'] = matchobj_2.group(3)
+            topdata['tasks']['stopped'] = matchobj_2.group(4)
+            topdata['tasks']['zombie'] = matchobj_2.group(5)
         elif matchobj_3:
             topdata['cpu_utilization']['us'] = matchobj_3.group(1)
             topdata['cpu_utilization']['sy'] = matchobj_3.group(2)
@@ -1459,6 +1632,10 @@ def parseTopSection(content, parsedOutput):
         for key in topdata['swap']:
             topdata['swap'][key] = topdata['swap'][key] * 1024
     replaceComma(topdata)
+    datalist = ['tasks', 'cpu_utilization', 'ram', 'swap']
+    for sec in datalist:
+        if len(topdata[sec]) == 0:
+            logging.error("Top format chaned. data could be missing")
     parsedOutput[final_section_name] = topdata
 
 
@@ -1538,7 +1715,7 @@ def parseMeminfoSection(content, parsedOutput):
         if start_section_flag:
             # "MemTotal:       32653368 kB\n",
             keyval = line.split(':')
-            key = keyval[0].lower().replace(' ', '_')
+            key = keyval[0].replace(' ', '_')
             #meminfodata[keyval[0]] = (re.split('\ +',(keyval[1]).strip()))[0]
             meminfodata[key] = int(keyval[1].split()[0]) * 1024
     parsedOutput[final_section_name] = meminfodata
@@ -1670,8 +1847,8 @@ def parseFreeMSection(content, parsedOutput):
  
 
     freeMData = {}
-    #tokList = []
-    tokList = ['total', 'used', 'free', 'shared', 'buffers', 'cached']
+    tokList = []
+    alltokList = ['total', 'used', 'free', 'shared', 'buffers', 'cached', 'buff/cache', 'available']
     startSec = False
 
     freeMSection = content[raw_section_name][0]
@@ -1679,9 +1856,10 @@ def parseFreeMSection(content, parsedOutput):
     for line in freeMSection:
         if 'total' in line and 'used' in line and 'free' in line:
             sectokList = line.rstrip().split()
-            if not cmpList(tokList, sectokList):
-                logging.error("Free-m section format changed. old sec list: " + str(tokList) + " new sec list: " + str(sectokList))
+            if set(sectokList).intersection(set(alltokList)) != set(sectokList):
+                logging.error("Free-m section format changed. union list: " + str(alltokList) + " new sec list: " + str(sectokList))
                 return
+            tokList = sectokList
             startSec = True
 
         if startSec and 'Mem:' in line:
@@ -1766,8 +1944,10 @@ def parseIOstatSection(content, parsedOutput):
     #tok_cpuline = []
     tok_cpuline = ['avg-cpu:', '%user', '%nice', '%system', '%iowait', '%steal', '%idle']
     deviceLine = False
-    #tok_deviceline = []
-    tok_deviceline = ['Device:', 'rrqm/s', 'wrqm/s', 'r/s', 'w/s', 'rsec/s', 'wsec/s', 'avgrq-sz', 'avgqu-sz', 'await', 'svctm', '%util']
+    tok_deviceline = []
+    #tok_deviceline1 = ['Device:', 'rrqm/s', 'wrqm/s', 'r/s', 'w/s', 'rsec/s', 'wsec/s', 'avgrq-sz', 'avgqu-sz', 'await', 'svctm', '%util']
+    #tok_deviceline2 = ['Device:', 'rrqm/s', 'wrqm/s', 'r/s', 'w/s', 'rkB/s', 'wkB/s', 'avgrq-sz', 'avgqu-sz', 'await', 'r_await', 'w_await', 'svctm', '%util']
+    tok_devicelist = ['Device:', 'rrqm/s', 'wrqm/s', 'r/s', 'w/s', 'rkB/s', 'wkB/s', 'avgrq-sz', 'avgqu-sz', 'await', 'r_await', 'w_await', 'svctm', '%util', 'rsec/s', 'wsec/s']
 
     # Iterate over all instances and create list of maps
     for iostatSection in sectionList:
@@ -1779,7 +1959,7 @@ def parseIOstatSection(content, parsedOutput):
             if 'avg-cpu' in line and 'user' in line:
                 avgcpuLine = True
                 sectok_cpuline = line.rstrip().split()
-                if not cmpList(tok_cpuline, sectok_cpuline):
+                if tok_cpuline != sectok_cpuline:
                     logging.error("iostat section format changed. old sec list: " + str(tok_cpuline) + " new sec list: " + str(sectok_cpuline))
                     return
                 continue
@@ -1788,8 +1968,10 @@ def parseIOstatSection(content, parsedOutput):
                 avgcpuLine = False
                 deviceLine = True
                 sectok_deviceline = line.rstrip().split()
-                if not cmpList(tok_deviceline, sectok_deviceline):
-                    logging.error("iostat section format changed. old sec list: " + str(tok_deviceline) + " new sec list: " + str(sectok_deviceline))
+                if set(sectok_deviceline).intersection(set(tok_devicelist)) == set(sectok_deviceline):
+                    tok_deviceline = sectok_deviceline
+                else: 
+                    logging.error("iostat section format changed. old sec union list: " + str(tok_devicelist) + " new sec list: " + str(sectok_deviceline))
                     return
                 continue
 
