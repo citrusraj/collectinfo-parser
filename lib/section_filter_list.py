@@ -689,5 +689,5 @@ FILTER_LIST = {
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
 AS_SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'features']
-SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
+SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname']
 DERIVED_SECTION_LIST = ['features']
