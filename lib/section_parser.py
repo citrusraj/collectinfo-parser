@@ -38,7 +38,8 @@ def getSectionListForParsing(content, available_section):
 def getSectionNameFromId(sec_id):
     raw_section_name = FILTER_LIST[sec_id]['raw_section_name']
     final_section_name = FILTER_LIST[sec_id]['final_section_name'] if 'final_section_name' in FILTER_LIST[sec_id] else ''
-    return raw_section_name, final_section_name
+    parent_section_name = FILTER_LIST[sec_id]['parent_section_name'] if 'parent_section_name' in FILTER_LIST[sec_id] else ''
+    return raw_section_name, final_section_name, parent_section_name
     
 
 def getByteMemFromStr(mem, suflen):
@@ -130,7 +131,7 @@ def typeCheckFieldAndRawValues(section):
                     continue
 
             if section[key] is None:
-                logging.warning("Value for key " + key + " is Null")
+                logging.debug("Value for key " + key + " is Null")
                 continue
             # Some numbers have a.b.c.d* format, which matches with IP address
             # So do a defensive check at starting.
@@ -200,10 +201,10 @@ def typeCheckBasicValues(section):
                 or isinstance(section[key], bool) or isinstance(section[key], float):
                     continue
             elif section[key] is None:
-                logging.info("Value for key " + key + " is Null")
+                logging.debug("Value for key " + key + " is Null")
                 continue
             elif section[key] == 'N/E' or section[key] == 'n/e':
-                logging.info("'N/E' for the field.")
+                logging.debug("'N/E' for the field.")
                 section[key] = None
                 continue
 
@@ -234,7 +235,7 @@ def typeCheckBasicValues(section):
 def getClusterSize(content):
     # statistics section
     sec_id = 'ID_11'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Getting cluster size")
     if not content:
@@ -263,7 +264,7 @@ def getClusterSize(content):
 
 def identifyNamespace(content):
     sec_id = 'ID_2'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     if raw_section_name not in content:
         logging.warning(raw_section_name + " section not present.")
@@ -314,7 +315,7 @@ def identifyNodes(content):
     nodes1 = getNodesFromLatencyInfo(content)
     nodes2 = getNodesFromNetworkInfo(content)
     if nodes1 and nodes2:
-        return (nodes1 if len(nodes1) > len(nodes2) else nodes2)
+        return (nodes1 if len(nodes1) >= len(nodes2) else nodes2)
     elif nodes1:
         return nodes1
     elif nodes2:
@@ -327,7 +328,7 @@ def identifyNodes(content):
 
 def getNodesFromLatencyInfo(content):
     sec_id = 'ID_10'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     if raw_section_name not in content:
         logging.warning(raw_section_name + " section not present.")
@@ -348,7 +349,7 @@ def getNodesFromLatencyInfo(content):
         # Or it can have some data which is not interest to us.
         if "~~~~~~~" in latency[i] or "====" in latency[i]:
             delimiterCount += 1
-        elif delimiterCount == 1 and 'time' not in latency[i]:
+        elif delimiterCount == 1 and re.search(timeRegex, latency[i]):
             # So far one delimiter.
             # 1 delimiter implies the subsequent lines contain data(nodeId) we are interested in.
             nodeId = getNodeId(latency[i])
@@ -370,7 +371,7 @@ def getNodesFromLatencyInfo(content):
 
 def getNodesFromNetworkInfo(content):
     sec_id = 'ID_49'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     if raw_section_name not in content:
         logging.warning(raw_section_name + " section not present.")
@@ -385,87 +386,32 @@ def getNodesFromNetworkInfo(content):
     nodeid = 0
     skip_lines = 2
     for i in range(len(network_info)):
-        if 'Node' in network_info[i]:
-            if 'Cluster' in network_info[i].split()[0]:
-                if 'Node' in network_info[i].split()[1]:
-                    nodeid = 1
-                else:
-                    raise Exception("New format of Network info detected. can not get nodeids")
-            continue
         if "~~~~~~~" in network_info[i] or  "====" in network_info[i]:
             del_found = True
             continue
         if "Number" in  network_info[i] or "No." in network_info[i]:
             logging.debug("Parsed all the nodes in info_network, signing off" + str(nodes))
             return nodes
+
+        if 'Node' in network_info[i]:
+            if 'Cluster' in network_info[i].split()[0]:
+                if 'Node' in network_info[i].split()[1]:
+                    nodeid = 1
+                else:
+                    raise Exception("New format of Network info detected. can not get nodeids")
+
         if  del_found:
             if skip_lines == 0:
                 # Get node ip
                 nodeLine = network_info[i].split()
                 if nodeLine[nodeid].rstrip() is '' or nodeLine[nodeid] is '.':
-                    logging.warning("NodeId absent in info_network section line" + network_info[i])
+                    logging.debug("NodeId absent in info_network section line" + network_info[i])
                     continue
                 else:
                     nodes.append(nodeLine[nodeid])
 
             else:
                 skip_lines = skip_lines - 1
-
-
-
-def updateSetAndBinCounts(parsedOutput, sectionName):
-    for key in parsedOutput:
-        currObj = parsedOutput[key][sectionName]
-        all_sets = {}
-        all_bins = {}
-        all_ns = {}
-        if 'Namespace' in currObj:
-            all_ns = currObj['Namespace']
-            for ns in all_ns.keys():
-                nsObj = all_ns[ns]
-                nsObj.update({'bins': {}})
-                nsObj.update({'sets': {}})
-
-        if 'Bin' in currObj.keys():
-            all_bins = currObj['Bin']
-            for sbin in all_bins.keys():
-                binObj = all_bins[sbin]
-                for ns in all_ns.keys():
-                    nsObj = all_ns[ns]
-
-                    #TODO: some file have different format, can not find ns_name check case 5518
-                    if 'ns_name' not in nsObj['service'] or 'ns_name' not in binObj:
-                        logging.warning("Could not find ns_name")
-                        continue
-                        #nsObj['service']['ns_name'] = 'UNKNOWN_NS'
-
-                    if nsObj['service']['ns_name'] == binObj['ns_name']:
-                        if 'num-bin-names' in binObj:
-                            nsObj['service']['bin_count'] = binObj['num-bin-names']
-                        # print(binObj)
-                        nsObj['bins'].update({sbin: binObj})
-                        # print(sbin + str(nsObj['bins']))
-            currObj.pop('Bin')
-
-        if 'Set' in currObj:
-            all_sets = currObj['Set']
-            for ns in all_ns.keys():
-                all_ns[ns]['service']['set_count'] = 0
-            for sset in all_sets.keys():
-                setObj = all_sets[sset]
-                for ns in all_ns.keys():
-                    nsObj = all_ns[ns]
-
-                    #TODO: some file have different format, can not find ns_name check case 5518
-                    if 'ns_name' not in nsObj['service'] or 'ns_name' not in setObj:
-                        logging.warning("Could not find ns_name")
-                        #nsObj['service']['ns_name'] = 'UNKNOWN_NS'
-                        continue
-
-                    if nsObj['service']['ns_name'] == setObj['ns_name']:
-                        nsObj['service']['set_count'] += 1
-                        nsObj['sets'].update({sset: setObj})
-            currObj.pop('Set')
 
 
 
@@ -479,154 +425,264 @@ def isSingleColumnFormat(section):
             return False
 
 
-def parseMultiColumnFormat(content, parsedOutput, sectionName):
-    nsInitialized = False
-    setInitialized = False
-    binInitialized = False
-    serviceInitialized = False
-    entries = len(content)
-    jsonArrays = []
-    nsName = ""
-    binName = ""
-    setName = ""
-    objKey = ""
-    currentSection = ""
-    currSecUpdated = False
-    nodesPopulated = False
+# Section are devided by delimiter (~~) in stats and configs
+def getSectionArray(content, delimit):
+    sectionList = []
+    section = []
+    secStart = False
+    for line in content:
+        if delimit in line:
+            # Try to get separate sections. Create a sectionList
+            if secStart:
+                sectionList.append(section)
+                section = []
+            secStart = True
+        if secStart:
+            section.append(line)
+    if secStart:
+        sectionList.append(section)
+    return sectionList
 
-    for i in range(entries):
-        # '~~~~~' is a delimiter - The line containing delimiter has
-        # section of printconfig(Service|Network|<Namespace configuration>).
-        # Do we want to process each namespace independently.
-        # Processing together leads to overwriting existing values.
-        # In Column format processing, config is present per node - not per namespace
-        # TODO Non-uniformity in config from row format to column format.
-        if "~" in content[i]:
-            section = re.split("~*", content[i])[1]
-            if 'Namespace' in section:
-                currentSection = "Namespace"
-                currSecUpdated = True
-                nsName = section.split()[0]
-                objKey = nsName
-            elif 'Bin' in section:
-                currentSection = "Bin"
-                currSecUpdated = True
-                binName = section.split()[0]
-                objKey = binName
-            elif 'Set' in section:
-                currentSection = "Set"
-                currSecUpdated = True
-                setName = section.split()[0] + ' ' + section.split()[1]
-                objKey = setName
-            else:
-                currentSection = "service"
-                currSecUpdated = True
-                logging.debug('current section is ' + currentSection)
 
-        # Line that describes a section doesn't have ":" and we are not interested in it.
-        elif ":" not in content[i]:
+# Return SectionMap from parsedOutput for sectionName
+def getNodeSecMap(node, parsedOutput, sectionName):
+    if node in parsedOutput:
+        return parsedOutput[node][sectionName]
+    else:
+        for nodeid in parsedOutput:
+            # nodeip = a..basfdfdf:3000 so remove 3000 and than check
+            if nodeid.split(':')[0] in node or node.split(':')[0] in nodeid:
+                return parsedOutput[nodeid][sectionName]
+    return None
+
+
+def updateSetAndBinCounts(parsedOutput, sectionName):
+    #nsSection = 'Namespace'
+    nsSection = 'namespace'
+    setSection = 'sets'
+    binSection = 'bins'
+    serviceSection = 'service'
+
+    for node in parsedOutput:
+        parsedSection = parsedOutput[node][sectionName]
+        if serviceSection not in parsedSection:
             continue
-        else:
-            # Otherwise Entries are in this format
-            # <key> : <val_for_node1> <val_for_node2> <val_for_node3> <val_for_node4> <val_for_node5>
-            # Below is an example entry.
-            # "NODE:clf1003 clf1004 clf1005 clf1006 clf1007 \n",
-            # Remove the spaces and get the entries in the  every line
-            row = content[i].split(":", 1)
-            # print warning if the len(row) != 2.
-            if len(row) != 2:
-                log.warning("MultiColumn Format Anamoly. A line contains unexpected entries : " + str(len(row)))
-            key = row[0].rstrip().split()[0]
-            vals = row[1].rstrip().split()
-            length = len(vals)
-            # Here "NODE" is hardcoded to find the row containing nodeids.
-            # TODO is there a better way to do it than hardcoding.
 
-            if (key == "NODE" and not nodesPopulated):
-                for nodeId in vals:
-                    for key in parsedOutput:
-                        if nodeId in key:
-                            if sectionName not in parsedOutput[key]:
-                                parsedOutput[key][sectionName] = {}
-                            jsonArrays.append(parsedOutput[key][sectionName])
-                            break
-                nodesPopulated = True
-            # if NODE is not present in line, the line can contain data for the currentSection.
-            elif key != "NODE":
-                # The current format of vals is [<val_for_node1>, <val_for_node2>, ...]
-                # Parse from 0th entry and order the parsedOutput['nodeid'] json objects 
-                # in the same order as the node ids in the give line.
-                # Assumption - order of nodeids and values are same.
-                index = 0
-                for i in range(len(jsonArrays)):
-                    # Order of nodeids and the values for each key is assumed to be same here.
-                    if(index >= length):
-                        logging.warning("Number of values do not match the cluster size, Values : " + str(index+1) + ", " + str(length))
-                        break
-                    if currentSection == "":
-                        jsonArrays[i][key] = vals[index]
-                    elif currentSection == "Namespace":
-                        jsonArrays[i][currentSection][objKey]['service'][key] = vals[index]
-                    elif currentSection == 'Set' or currentSection == 'Bin':
-                        jsonArrays[i][currentSection][objKey][key] = vals[index]
-                    else:
-                        jsonArrays[i][currentSection][key] = vals[index]
-                    index += 1
-                    #warn in case len(val) > Cluster_size(no of nodes in the cluster).
-                if len(jsonArrays) != length:
-                    logging.warning("Number of values and cluster size doesn't match. cluster_size, values: " + str(len(jsonArrays)) + "," + str(length))
-            # If we crossed the section delimiter, initialize a new dictionary for this new section in node's dictionary.
-            elif not currentSection:
-                logging.warning("Data is present before a sub-section delimiter and thus data can't be associated with a sub-section")
-                logging.warning(content[i])
-            #   for i in range(len(jsonArrays)):
-            #       jsonArrays[i][currentSection] = {}
-            #   currSecUpdated = False
-            if nodesPopulated and currentSection == "Namespace" and not nsInitialized:
-                for i in range(len(jsonArrays)):
-                    jsonArrays[i][currentSection] = {}
-                nsInitialized = True
-            if nodesPopulated and currentSection == "Set" and not setInitialized:
-                for i in range(len(jsonArrays)):
-                    jsonArrays[i][currentSection] = {}
-                setInitialized = True
-            if nodesPopulated and currentSection == "Bin" and not binInitialized:
-                for i in range(len(jsonArrays)):
-                    jsonArrays[i][currentSection] = {}
-                binInitialized = True
-            if currSecUpdated:
-                if currentSection == "Namespace" or currentSection == "Set" or currentSection == "Bin":
-                    obj = {}
-                    #obj['service'] = {}
-                    if currentSection == "Namespace":
-                        obj['service'] = {}
-                        obj['service']['ns_name'] = nsName
-                    elif currentSection == "Set":
-                        obj['set_name'] = setName
-                    elif currentSection == "Bin":
-                        obj['bin_name'] = binName
-                    for i in range(len(jsonArrays)):
-                        jsonArrays[i][currentSection].update({objKey:obj})
-                elif currentSection == "service" and not serviceInitialized:
-                    for i in range(len(jsonArrays)):
-                        jsonArrays[i][currentSection] = {}
-                    serviceInitialized = True
-                currSecUpdated = False
+        if nsSection in parsedSection:
+            parsedSection[serviceSection]['ns_count'] = len(parsedSection[nsSection])
+
+            for ns in parsedSection[nsSection]:
+                if serviceSection not in parsedSection[nsSection][ns]:
+                    continue
+
+                objmap =  parsedSection[nsSection][ns]
+
+                if setSection in objmap:
+                    objmap[serviceSection]['set_count'] = len(objmap[setSection])
+                if binSection in objmap:
+                    bin_count = 0
+                    found = False
+                    if 'num-bin-names' in objmap[binSection]:
+                        bin_count = objmap[binSection]['num-bin-names']
+                        found = True
+                    elif 'bin_names' in objmap[binSection]:
+                        bin_count = objmap[binSection]['bin_names']
+                        found = True
+                    if found:
+                        objmap[serviceSection]['bin_count'] = bin_count
+
+
+def parseMultiColumnFormat(section):
+    # Ordering of respective nodeid and data will be same in 'nodeids[]'
+    # and 'sectionArray[]'
+    nodeids = []
+    sectionObj = {}
+
+    for line in section:
+        if ':' not in line:
+            continue
+        keyval = line.split(':', 1)
+        key = keyval[0].strip()
+        vals = keyval[1].strip().split()
+        if key == 'NODE':
+            nodeids.extend(vals)
+            for node in nodeids:
+                sectionObj[node] = {}
+            continue
+
+        elif len(nodeids) != 0:
+            if  len(vals) != len(nodeids):
+                continue
+            for index, node in enumerate(nodeids):
+                sectionObj[node][key] = vals[index]
+    return sectionObj
+
+
+# This map has section names for statistics and config sections.
+# This map should be passed to the parser func. func should not hardcode
+# section name.
+SEC_MAP = {'nsSection': 'namespace', 'setSection': 'sets', 'binSection': 'bins',\
+             'serviceSection': 'service', 'sindexSection': 'stats_sindex', 'networkSection': 'network'}
+
+def parseMultiColumnSection(rawSection, parsedOutput, sectionName):
+    secLine = rawSection[0]
+    section = rawSection[1:]
+
+    subSectionName = re.split("~*", secLine)[1]
+
+    sec_map = SEC_MAP
+    nsSection = sec_map['nsSection']
+    setSection = sec_map['setSection']
+    binSection = sec_map['binSection']
+    serviceSection = sec_map['serviceSection']
+    sindexSection = sec_map['sindexSection']
+    networkSection = sec_map['networkSection']
+ 
+    nsName = ''
+    setName = ''
+    sindexName = ''
+    cursec = ''
+
+    toks = subSectionName.split()
+    if " Namespace " in subSectionName:
+        # ~~~~~~~~~~<ns_name> Namespace Statistics~~~~~~~~~
+        cursec = nsSection
+        nsName = toks[0]
+
+    elif " Bin " in subSectionName:
+        # ~~~~~<ns_name> Bin Statistics~~~~~~~~~~~~~~~~~~~~
+        cursec = binSection
+        nsName = toks[0]
+
+    elif " Set " in subSectionName:
+        # ~~~~~~<ns_name> <set_name> Set Statistics~~~~~~~~
+        cursec = setSection
+        nsName = toks[0]
+        setName = toks[1]
+
+    elif " Sindex " in subSectionName:
+        #~~~~~~~<ns_name> <set_name> <sindexname> Statistics~~~~~~~~~~~~~~~~~~~~~~~~~
+        cursec = sindexSection
+        nsName = toks[0]
+        setName = toks[1]
+        sindexName = toks[2]
+    elif "Network " in subSectionName:
+        #~~~~~~~Network Configuration~~~~~~~~~~~~~~~~~~~~~~~~~
+        cursec = networkSection
+        
+    elif "Service" in subSectionName:
+        #~~~~~~~Service Statistics/Configuration~~~~~~~~~~~~~~~~~~~~~~~~~
+        cursec = serviceSection
+
+    else:
+        logging.info("Unkown section line: " + subSectionName)
+        return
+    logging.debug("currentSection: " + cursec)
+
+    sectionObj = parseMultiColumnFormat(section)
+    # Put multicolumn parsed data in proper format for statistics or config section.
+    for node in sectionObj:
+        parsedSec = getNodeSecMap(node, parsedOutput, sectionName)
+        if parsedSec is None:
+            logging.warning("Nodeid is not in info_network or latency: " + node)
+            continue
+        # Update Service and Network information.
+        if cursec == serviceSection:
+            parsedSec[serviceSection] = sectionObj[node]
+
+        elif cursec == networkSection:
+            parsedSec[networkSection] = sectionObj[node]
+
+        else:
+            # Initialize namespace sections.
+            if nsSection not in parsedSec:
+                parsedSec[nsSection] = {}
+            parsedNsSec = parsedSec[nsSection]
+
+            if nsName not in parsedNsSec:
+                parsedNsSec[nsName] = {}
+
+            # Update Bin, Set, Sindex and Service data in namespace section.
+            if cursec == binSection:
+                parsedNsSec[nsName][binSection] = sectionObj[node]
+
+            elif cursec == setSection:
+                if setSection not in parsedNsSec[nsName]:
+                    parsedNsSec[nsName][setSection] = {}
+                parsedNsSec[nsName][setSection][setName] = sectionObj[node]
+
+            elif cursec == sindexSection:
+                if sindexSection not in parsedNsSec[nsName]:
+                    parsedNsSec[nsName][sindexSection] = {}
+                parsedNsSec[nsName][sindexSection][sindexName] = sectionObj[node]
+
+            else:
+                parsedNsSec[nsName][serviceSection] = sectionObj[node]
     updateSetAndBinCounts(parsedOutput, sectionName)
-    return
+
+
+def parseMultiColumnStatConfig(content, parsedOutput, sectionName):
+    delimit = '~~'
+    sectionList = getSectionArray(content, delimit)
+    for rawSection in sectionList:
+        parseMultiColumnSection(rawSection, parsedOutput, sectionName)
+
+def parseMultiColumnSubSection(rawSection, parsedOutput, final_section_name, parent_section_name):
+    secLine = rawSection[0]
+    section = rawSection[1:]
+
+    subSectionName = re.split("~*", secLine)[1]
+    xdrSection = 'xdr'
+    dcSection = 'dc'
+    curSec = ''
+    dcName = ''
+
+    tok = subSectionName.strip().split()
+    if 'XDR ' in subSectionName:
+        # ~~~~~XDR Statistics/Config~~~~
+        curSec = xdrSection
+
+    elif 'DC' in subSectionName:
+        # ~~~~~DC Statistics/Config~~~~~
+        dcName = tok[0]
+        curSec = dcSection
+
+    else:
+        logging.info("Unknown section line: " + subSectionName)
+        return
+
+    logging.debug("currentSection: " + curSec)
+
+    sectionObj = parseMultiColumnFormat(section)
+    for node in sectionObj:
+        parsedSec = getNodeSecMap(node, parsedOutput, parent_section_name)
+        if parsedSec is None:
+            logging.warning("Nodeid is not in info_network or latency: " + node)
+            continue
+
+        # Update XDR and DC information.
+        if curSec == xdrSection:
+            parsedSec[final_section_name] = sectionObj[node]
+
+        elif curSec == dcSection:
+            if final_section_name not in parsedSec:
+                parsedSec[final_section_name] = {}
+            parsedSec[final_section_name][dcName] = sectionObj[node]
+
+
+def parseSubStatConfig(content, parsedOutput, final_section_name, parent_section_name):
+    delimit = '~~'
+    sectionList = getSectionArray(content, delimit)
+    for rawSection in sectionList:
+        parseMultiColumnSubSection(rawSection, parsedOutput, final_section_name, parent_section_name)
+
 
 def initNodesForParsedJson(nodes, content, parsedOutput, sectionName):
-    #nodes = list(parsedOutput.keys())
-    #if len(nodes) == 0:
-    #    nodes = identifyNodes(content)
-    #    logging.info("Identified nodes: " + str(nodes))
-    #    if not nodes:
-    #        logging.warning("Latency or info_network section not available, NodeIds can't be identified")
-    #        return 
     for node in nodes:
         if node not in parsedOutput:
             parsedOutput[node] = {}
-        parsedOutput[node][sectionName] = {}
+        if sectionName not in parsedOutput[node]:
+            parsedOutput[node][sectionName] = {}
 
 
 def parseSingleColumnFormat(content, parsedOutput, sectionName):
@@ -721,11 +777,40 @@ def getNodeId(string):
 ###############################################################################
 ########################### Main section parser func ##########################
 ###############################################################################
+def parseDcXdrStatConfig(sec_id, nodes, content, parsedOutput):
+    raw_section_name, final_section_name, parent_section_name  = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+
+    if parent_section_name == '':
+        logging.warning("Parent section name not present. Can not parse section")
+        return
+
+    statSection = content[raw_section_name][0]    
+
+    # initialize only if parent section is not present, do not overwrite.
+    initNodesForParsedJson(nodes, content, parsedOutput, parent_section_name)
+
+    parseSubStatConfig(statSection, parsedOutput, final_section_name, parent_section_name)
+    for node in nodes:
+        if parent_section_name in parsedOutput[node] and\
+            final_section_name in parsedOutput[node][parent_section_name]:
+            typeCheckFieldAndRawValues(parsedOutput[node][parent_section_name][final_section_name])
 
 
 def parseConfigSection(nodes, content, parsedOutput):
     sec_id = 'ID_5'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -749,13 +834,54 @@ def parseConfigSection(nodes, content, parsedOutput):
     if singleColumn:
         parseSingleColumnFormat(configSection, parsedOutput, final_section_name)
     else:
-        parseMultiColumnFormat(configSection, parsedOutput, final_section_name)
+        parseMultiColumnStatConfig(configSection, parsedOutput, final_section_name)
     typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
+def parseDcConfigSection(nodes, content, parsedOutput):
+    sec_id = 'ID_7'
+    parseDcXdrStatConfig(sec_id, nodes, content, parsedOutput)
+
+
+def parseXdrConfigSection(nodes, content, parsedOutput):
+    sec_id = 'ID_6'
+    parseDcXdrStatConfig(sec_id, nodes, content, parsedOutput)
+
+
+def getStatSindexSection(content):
+    sec_id = 'ID_14'
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
+
+    logging.info("Parsing section: " + final_section_name)
+    if not content:
+        logging.warning("Null section json")
+        return
+
+    if raw_section_name not in content:
+        logging.warning(raw_section_name + " section not present.")
+        return
+
+    if len(content[raw_section_name]) > 1:
+        logging.warning("More than one entries detected, There is a collision for this section: " + final_section_name)
+ 
+    statSection = content[raw_section_name][0]
+
+    delimit = '~~'
+    secIndex = 0
+    found = False
+    for index, line in enumerate(statSection):
+        if delimit in line:
+            secIndex = index
+            found = True
+            break
+    if found:
+        return statSection[secIndex:]
+       
+    
+
 def parseStatSection(nodes, content, parsedOutput):
     sec_id = 'ID_11'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -779,13 +905,27 @@ def parseStatSection(nodes, content, parsedOutput):
     if singleColumn:
         parseSingleColumnFormat(statSection, parsedOutput, final_section_name)
     else:
-        parseMultiColumnFormat(statSection, parsedOutput, final_section_name)
+        sindexStat = getStatSindexSection(content)
+        if sindexStat:
+            statSection.extend(sindexStat)
+        parseMultiColumnStatConfig(statSection, parsedOutput, final_section_name)
     typeCheckRawAll(nodes, final_section_name, parsedOutput)
+
+
+def parseDcStatSection(nodes, content, parsedOutput):
+    sec_id = 'ID_13'
+    parseDcXdrStatConfig(sec_id, nodes, content, parsedOutput)
+
+
+def parseXdrStatSection(nodes, content, parsedOutput):
+    sec_id = 'ID_12'
+    parseDcXdrStatConfig(sec_id, nodes, content, parsedOutput)
+
 
 
 def parseLatencySection(nodes, content, parsedOutput):
     sec_id = 'ID_10'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -813,6 +953,8 @@ def parseLatencySection(nodes, content, parsedOutput):
                 parsedOutput[key][final_section_name][histogram] = {}
         elif 'time' in latency[i].lower():
             keys = getHistogramKeys(latency[i])
+        elif not re.search(timeRegex, latency[i]):
+            continue
         else:
             nodeId = getNodeId(latency[i])
             logging.debug("Got nodeId: " + str(nodeId))
@@ -839,7 +981,7 @@ def parseLatencySection(nodes, content, parsedOutput):
 
 def parseSindexInfoSection(nodes, content, parsedOutput):
     sec_id = 'ID_51'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -909,7 +1051,7 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
 
 def parseFeatures(nodes, content, parsedOutput):
     sec_id = 'ID_87'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -996,7 +1138,7 @@ def statExistInStatistics(statmap, statlist):
 
 def isStatParsed(nodes, parsedOutput):
     sec_id = 'ID_11'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
     for node in parsedOutput:
         if final_section_name in parsedOutput[node]:
             return True
@@ -1007,7 +1149,7 @@ def isStatParsed(nodes, parsedOutput):
 def parseFeaturesFromStats(nodes, content, parsedOutput, section_name):
     # check for 'statistics' section.
     sec_id = 'ID_11'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Getting cluster size")
     if not content:
@@ -1029,7 +1171,8 @@ def parseFeaturesFromStats(nodes, content, parsedOutput, section_name):
         service_map = None
         ns_map = None
         service_sec = 'service'
-        ns_sec = 'Namespace'
+        #ns_sec = 'Namespace'
+        ns_sec = 'namespace'
 
         featureobj = {'KVS':'NO', 'UDF':'NO', 'BATCH':'NO', 'SCAN':'NO', 'SINDEX':'NO', 'QUERY':'NO', 'AGGREGATION':'NO', 'LDT':'NO', 'XDR ENABLED':'NO', 'XDR DESTINATION':'NO'}
         if final_section_name in parsedOutput[node] and service_sec in parsedOutput[node][final_section_name]:
@@ -1141,10 +1284,10 @@ def parseFeaturesFromStats(nodes, content, parsedOutput, section_name):
 
 def parseAsdversion(content, parsedOutput):
     sec_id_1 = 'ID_27'
-    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
+    raw_section_name_1, final_section_name_1, _ = getSectionNameFromId(sec_id_1)
 
     sec_id_2 = 'ID_28'
-    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+    raw_section_name_2, final_section_name_2, _ = getSectionNameFromId(sec_id_2)
 
     logging.info("Parsing section: " + final_section_name_1)
     if not content:
@@ -1176,7 +1319,21 @@ def parseAsdversion(content, parsedOutput):
                 else:
                     version = distro[i][match.start():match.end()]
                 if re.search("ser", distro[i]) and not re.search("tool", distro[i]):
-                    if 'server-version' not in build_data or build_data['server-version'] < version:
+                    update = False
+                    if 'server-version' not in build_data:
+                        update = True
+                    else:
+                        m1 = re.match(r'(.+)\.(.+)\.(.+)', build_data['server-version'])
+                        m2 = re.match(r'(.+)\.(.+)\.(.+)', version)
+                        if m1 and m2:
+                            if int(m2.group(1)) > int(m1.group(1)):
+                                update = True
+                            elif (int(m2.group(1)) == int(m1.group(1))) and (int(m2.group(2)) > int(m1.group(2))):
+                                update = True
+                            elif (int(m2.group(1)) == int(m1.group(1))) and (int(m2.group(2)) == int(m1.group(2))) and\
+                                (int(m2.group(3)) > int(m1.group(3))):
+                                update = True
+                    if update:
                         build_data['server-version'] = version
                         build_data['package'] = dist
                         distroFound = True
@@ -1205,10 +1362,10 @@ def parseAsdversion(content, parsedOutput):
 # output: {in_aws: AAA, instance_type: AAA}
 def parseAWSDataSection(content, parsedOutput):
     sec_id_1 = 'ID_70'
-    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
+    raw_section_name_1, final_section_name_1, _ = getSectionNameFromId(sec_id_1)
 
     sec_id_2 = 'ID_85'
-    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+    raw_section_name_2, final_section_name_2, _ = getSectionNameFromId(sec_id_2)
 
     logging.info("Parsing section: " + final_section_name_1)
     if not content:
@@ -1266,10 +1423,10 @@ def parseAWSDataSection(content, parsedOutput):
 
 def parseLSBReleaseSection(content, parsedOutput):
     sec_id_1 = 'ID_25'
-    raw_section_name_1, final_section_name_1 = getSectionNameFromId(sec_id_1)
+    raw_section_name_1, final_section_name_1, _ = getSectionNameFromId(sec_id_1)
 
     sec_id_2 = 'ID_26'
-    raw_section_name_2, final_section_name_2 = getSectionNameFromId(sec_id_2)
+    raw_section_name_2, final_section_name_2, _ = getSectionNameFromId(sec_id_2)
 
 
     logging.info("Parsing section: " + final_section_name_1)
@@ -1371,7 +1528,7 @@ def parseTopLine(line, del1, del2):
 
 def parseTopSection(content, parsedOutput):
     sec_id = 'ID_36'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1508,7 +1665,7 @@ def parseTopSection(content, parsedOutput):
 
 def parseTopSectionOld(content, parsedOutput):
     sec_id = 'ID_36'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1649,7 +1806,7 @@ def getMemInNumber(memStr):
 #output: {kernel_name: AAA, nodename: AAA, kernel_release: AAA}
 def parseUnameSection(content, parsedOutput):
     sec_id = 'ID_24'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1682,7 +1839,7 @@ def parseUnameSection(content, parsedOutput):
 # output: {key: val..........}
 def parseMeminfoSection(content, parsedOutput):
     sec_id = 'ID_92'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1727,7 +1884,7 @@ def parseMeminfoSection(content, parsedOutput):
 # output: {hostname: {'hosts': [...................]}}
 def parseHostnameSection(content, parsedOutput):
     sec_id = 'ID_22'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1761,7 +1918,7 @@ def parseHostnameSection(content, parsedOutput):
 # output: [{name: AAA, size: AAA, used: AAA, avail: AAA, %use: AAA, mount_point: AAA}, ....]
 def parseDfSection(content, parsedOutput):
     sec_id = 'ID_38'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1831,7 +1988,7 @@ def parseDfSection(content, parsedOutput):
 # output: {mem: {}, buffers/cache: {}, swap: {}} 
 def parseFreeMSection(content, parsedOutput):
     sec_id = 'ID_37'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -1907,7 +2064,7 @@ def parseFreeMSection(content, parsedOutput):
 # output: [{avg-cpu: {}, device_stat: {}}, .........]
 def parseIOstatSection(content, parsedOutput):
     sec_id = 'ID_43'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -2008,7 +2165,7 @@ def parseIOstatSection(content, parsedOutput):
 
 def parseInterruptsSection(content, parsedOutput):
     sec_id = 'ID_93'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -2057,7 +2214,7 @@ def parseInterruptsSection(content, parsedOutput):
 
 def parseIPAddrSection(content, parsedOutput):
     sec_id = 'ID_72'
-    raw_section_name, final_section_name = getSectionNameFromId(sec_id)
+    raw_section_name, final_section_name, _ = getSectionNameFromId(sec_id)
 
     logging.info("Parsing section: " + final_section_name)
     if not content:
@@ -2103,7 +2260,6 @@ def parseIPAddrSection(content, parsedOutput):
 def parseSysSection(sectionList, content, parsedOutput):
     logging.info("Parse sys stats.")
     for section in sectionList:
-
         if section == 'top':
             parseTopSection(content, parsedOutput)
 
@@ -2138,11 +2294,13 @@ def parseSysSection(sectionList, content, parsedOutput):
              parseIPAddrSection(content, parsedOutput)
 
         else:
-            logging.warning("Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST.")
-        
+            logging.warning("Section unknown, can not be parsed. Check SYS_SECTION_NAME_LIST. Section: " + section)
+
+
+    logging.info("Converting basic raw string vals to original vals. Sections: " + str(sectionList))
+    for section in sectionList:
         if section in parsedOutput:
             paramMap = {section: parsedOutput[section]}
-            logging.info("Converting basic raw string vals to original vals.")
             typeCheckBasicValues(paramMap)
             parsedOutput[section] = copy.deepcopy(paramMap[section])
     
@@ -2157,12 +2315,23 @@ def parseAsSection(sectionList, content, parsedOutput):
         return
 
     for section in sectionList:
-
         if section == 'statistics':
             parseStatSection(nodes, content, parsedOutput)
 
+        elif section == 'stats_dc':
+            parseDcStatSection(nodes, content, parsedOutput)
+
+        elif section == 'stats_xdr':
+            parseXdrStatSection(nodes, content, parsedOutput)
+
         elif section == 'config':
             parseConfigSection(nodes, content, parsedOutput)
+
+        elif section == 'config_dc':
+            parseDcConfigSection(nodes, content, parsedOutput)
+
+        elif section == 'config_xdr':
+            parseXdrConfigSection(nodes, content, parsedOutput)
 
         elif section == 'latency':
             parseLatencySection(nodes, content, parsedOutput)
@@ -2174,12 +2343,20 @@ def parseAsSection(sectionList, content, parsedOutput):
             parseFeatures(nodes, content, parsedOutput)
 
         else:
-            logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST.")
-        
+            logging.warning("Section unknown, can not be parsed. Check AS_SECTION_NAME_LIST. Section: " + section)
+
+    # Change raw value after parsing all sections
+    # One section can be a child section of other like 'stat_dc'.
+    # parsedOutput[node][section] would not be there for child section.
+    # Can not parse all sections blindly, otherwise it could run over,
+    # sections, which are been already converted.
+
+    logging.info("Converting basic raw string vals to original vals. sections: " + str(sectionList))
+    for section in sectionList:        
         for node in nodes:
             if section in parsedOutput[node]:
+                # Need to create separate dict so that it only convert desired func
                 paramMap = {section: parsedOutput[node][section]}
-                logging.info("Converting basic raw string vals to original vals.")
                 typeCheckBasicValues(paramMap)
                 parsedOutput[node][section] = copy.deepcopy(paramMap[section])
 

@@ -6,10 +6,15 @@
 
 CMD_PREFIX = 'running shell command: '
 # Section filter list.
-# Param enable: Enable or disable dumping of section in parsed file.
-# Param section: Section name.
-# Param regex_new: regex for collectinfos having delimiter.
-# Param regex_old: regex for collectinfos, not having delimiter.
+# Param 'enable': Enable or disable dumping of section in parsed file.
+# Param 'raw_section_name': Section name in section.json.
+# Param 'final_section_name': Section name in parsed.json
+# Param 'parent_section_name': Section would be inside parent section in parsed.json
+# 'parent_section_name': {
+#               'final_section_name': {}
+# }
+# Param 'regex_new': regex for collectinfos having delimiter.
+# Param 'regex_old': regex for collectinfos, not having delimiter.
 FILTER_LIST = {
     'ID_1': {
         'enable': True,
@@ -49,13 +54,17 @@ FILTER_LIST = {
     },
     'ID_6': {
         'enable': True,
-        'raw_section_name': 'xdr_config',
+        'raw_section_name': 'config_xdr',
+        'final_section_name': 'config_xdr',
+        'parent_section_name': 'config',
         'regex_new': "\['config', 'xdr'\]"
         # 'parser_func'
     },
     'ID_7': {
         'enable': True,
-        'raw_section_name': 'dc_config',
+        'raw_section_name': 'config_dc',
+        'final_section_name': 'config_dc',
+        'parent_section_name': 'config',
         'regex_new': "\['config', 'dc'\]"
     },
     'ID_8': {
@@ -67,7 +76,7 @@ FILTER_LIST = {
     },
     'ID_9': {
         'enable': True,
-        'raw_section_name': 'diff config',
+        'raw_section_name': 'config_diff',
         'regex_new': "\['config', 'diff'\]",
         # 'parser_func'
     },
@@ -91,18 +100,27 @@ FILTER_LIST = {
     'ID_12': {
         'enable': True,
         'raw_section_name': 'statistics_xdr',
+        'final_section_name': 'stats_xdr',
+        'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'xdr'\]",
         # 'parser_func'
     },
     'ID_13': {
         'enable': True,
-        'raw_section_name': 'statistic_dc',
+        'raw_section_name': 'statistics_dc',
+        'final_section_name': 'stats_dc',
+        'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'dc'\]",
         # 'parser_func'
     },
+    # Section was inside statistics earlier, check final_section_name.
+    # Both should be same. This section would be parsed by default.
+    # 'final_section_name' would be 'stat_sindex' in statistics parent section
     'ID_14': {
         'enable': True,
-        'raw_section_name': 'statistic_sindex',
+        'raw_section_name': 'statistics_sindex',
+        'final_section_name': 'stats_sindex',
+        'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'sindex'\]",
         # 'parser_func'
     },
@@ -688,6 +706,6 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-AS_SECTION_NAME_LIST = ['statistics', 'config', 'latency', 'sindex_info', 'features']
+AS_SECTION_NAME_LIST = ['statistics', 'stats_dc', 'stats_xdr', 'config', 'config_dc', 'config_xdr', 'latency', 'sindex_info', 'features']
 SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
 DERIVED_SECTION_LIST = ['features']

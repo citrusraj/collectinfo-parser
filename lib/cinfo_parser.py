@@ -121,6 +121,7 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
     filter_list = FILTER_LIST
     skip_list = SKIP_LIST
     section_count = 0
+    outmap_sec = len(outmap)
 
     if not os.path.exists(filepath):
         logging.warning("collectinfo doesn't exist at path: " + filepath)
@@ -130,7 +131,7 @@ def extract_section_from_file(filepath, parse_all, outmap, force):
         logging.info("New collectinfo version delimit 'ASCOLLECTINFO': " + filepath)
         section_count = section_count_fun(filepath, delimit)
         extract_section_from_new_cinfo(filepath, filter_list, skip_list, delimit_regx, delimit, parse_all, outmap, force)
-        logging.info("Total sections: " + str(section_count) + "outmap sec: " + str(len(outmap)))
+        logging.info("Section in file: " + str(section_count) + "Added section in outmap: " + str(len(outmap) - outmap_sec))
     else:
         logging.info("Old collectinfo version: " + filepath)
         extract_section_from_old_cinfo(filepath, filter_list, skip_list, non_delimit_regx, outmap, force)
