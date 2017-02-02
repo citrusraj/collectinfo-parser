@@ -21,6 +21,15 @@ def cmpList(list1, list2):
         return False
     return True
  
+def getClusterName(parsedOutput):
+    for node in parsedOutput:
+        if 'config' in parsedOutput[node] and \
+            'service' in parsedOutput[node]['config'] and \
+            'cluster-name' in parsedOutput[node]['config']['service'] :
+            # TODO: SUD: it should check only one node or all node.
+            # nodes could be of diff version in same cluster.
+            return parsedOutput[node]['config']['service']['cluster-name']
+
 
 def getSectionListForParsing(content, available_section):
     final_section_list = []
@@ -521,8 +530,8 @@ def parseMultiColumnFormat(section):
 # This map has section names for statistics and config sections.
 # This map should be passed to the parser func. func should not hardcode
 # section name.
-SEC_MAP = {'nsSection': 'namespace', 'setSection': 'sets', 'binSection': 'bins',\
-             'serviceSection': 'service', 'sindexSection': 'stats_sindex', 'networkSection': 'network'}
+SEC_MAP = {'nsSection': 'namespace', 'setSection': 'set', 'binSection': 'bin',\
+             'serviceSection': 'service', 'sindexSection': 'sindex', 'networkSection': 'network'}
 
 def parseMultiColumnSection(rawSection, parsedOutput, sectionName):
     secLine = rawSection[0]
@@ -835,7 +844,7 @@ def parseConfigSection(nodes, content, parsedOutput):
         parseSingleColumnFormat(configSection, parsedOutput, final_section_name)
     else:
         parseMultiColumnStatConfig(configSection, parsedOutput, final_section_name)
-    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+    #typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseDcConfigSection(nodes, content, parsedOutput):
@@ -866,11 +875,12 @@ def getStatSindexSection(content):
  
     statSection = content[raw_section_name][0]
 
-    delimit = '~~'
+    del1 = '~~'
+    del2 = 'Sindex Statistics'
     secIndex = 0
     found = False
     for index, line in enumerate(statSection):
-        if delimit in line:
+        if del1 in line or del2 in line:
             secIndex = index
             found = True
             break
@@ -909,7 +919,7 @@ def parseStatSection(nodes, content, parsedOutput):
         if sindexStat:
             statSection.extend(sindexStat)
         parseMultiColumnStatConfig(statSection, parsedOutput, final_section_name)
-    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+    #typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseDcStatSection(nodes, content, parsedOutput):
@@ -976,7 +986,7 @@ def parseLatencySection(nodes, content, parsedOutput):
                         logging.warning("getHistogram keys returned a NULL set for keys " + str(latency[i]))
                     else:
                         logging.debug("latency section contains an empty string")
-    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+    #typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseSindexInfoSection(nodes, content, parsedOutput):
@@ -1046,7 +1056,7 @@ def parseSindexInfoSection(nodes, content, parsedOutput):
         else:
             logging.info("Node id not in nodes section: " + nodeId)
 
-    typeCheckRawAll(nodes, final_section_name, parsedOutput)
+    #typeCheckRawAll(nodes, final_section_name, parsedOutput)
 
 
 def parseFeatures(nodes, content, parsedOutput):
@@ -2318,19 +2328,19 @@ def parseAsSection(sectionList, content, parsedOutput):
         if section == 'statistics':
             parseStatSection(nodes, content, parsedOutput)
 
-        elif section == 'stats_dc':
+        elif section == 'statistics.dc':
             parseDcStatSection(nodes, content, parsedOutput)
 
-        elif section == 'stats_xdr':
+        elif section == 'statistics.xdr':
             parseXdrStatSection(nodes, content, parsedOutput)
 
         elif section == 'config':
             parseConfigSection(nodes, content, parsedOutput)
 
-        elif section == 'config_dc':
+        elif section == 'config.dc':
             parseDcConfigSection(nodes, content, parsedOutput)
 
-        elif section == 'config_xdr':
+        elif section == 'config.xdr':
             parseXdrConfigSection(nodes, content, parsedOutput)
 
         elif section == 'latency':
@@ -2357,7 +2367,7 @@ def parseAsSection(sectionList, content, parsedOutput):
             if section in parsedOutput[node]:
                 # Need to create separate dict so that it only convert desired func
                 paramMap = {section: parsedOutput[node][section]}
-                typeCheckBasicValues(paramMap)
+                #typeCheckBasicValues(paramMap)
                 parsedOutput[node][section] = copy.deepcopy(paramMap[section])
 
 

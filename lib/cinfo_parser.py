@@ -22,6 +22,23 @@ MIN_LINES_IN_SECTION_JSON = 3
 FILTER_LIST = section_filter_list.FILTER_LIST
 SKIP_LIST = section_filter_list.SKIP_LIST
 
+
+def get_timestamp_from_file(path):
+    timestamp = ''
+    if not os.path.exists(path):
+        logging.warning("collectinfo doesn't exist at Path: " + path)
+        return
+    infile = path
+    with open(infile, 'r') as inf:
+        try:
+            fileline = inf.readline()
+        except UnicodeDecodeError as e:
+            logging.warning('Error at: ' + fileline)
+            logging.warning(e)
+        if 'UTC' in fileline:
+            timestamp = fileline.strip()
+    return timestamp
+        
 #FORMAT = '%(asctime)-15s -8s %(message)s'
 #logging.basicConfig(format=FORMAT, filename= 'cinfo_par.log', level=logging.INFO)
 
@@ -104,13 +121,15 @@ def updateMap(newcinfo, key, value, outmap, skip_list, force):
 def extract_validate_filter_section_from_file(filepath, outmap, force):
     logging.info("Creating section json. parse, validate, filter sections.")
     parse_all = True
-
     if 'cinfo_paths' not in outmap:
         outmap['cinfo_paths'] = []
-        
-    section_count = extract_section_from_file(filepath, parse_all, outmap, force)
-    validateSectionCount(section_count, outmap, force)
     outmap['cinfo_paths'].append(filepath)
+   
+    section_count = extract_section_from_file(filepath, parse_all, outmap, force)
+    #print(outmap.keys())
+
+    #validateSectionCount(section_count, outmap, force)
+     
     filter_processed_cinfo(outmap)
 
 def extract_section_from_file(filepath, parse_all, outmap, force):
@@ -144,7 +163,7 @@ def validateSectionCount(section_count, outmap, force):
     if section_count != 0:
         outmap_sections = 0
         for key in outmap:
-            if key == 'section_ids':
+            if key == 'section_ids' or key == 'cinfo_paths':
                 continue
             outmap_sections += len(outmap[key])
 

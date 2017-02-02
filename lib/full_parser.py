@@ -14,13 +14,81 @@ def getSectionListForParsing(outmap, available_section):
         logging.warning("`section_ids` section missing in section_json.")
         return final_section_list
     for section_id in outmap['section_ids']:
-        if 'final_section_name' in SECTION_FILTER_LIST[section_id]:
-            outmap_section_list.append(SECTION_FILTER_LIST[section_id]['final_section_name'])
+        section = SECTION_FILTER_LIST[section_id]
+        if 'final_section_name' in section:
+            sec_name = ''
+            if 'parent_section_name' in section:
+                sec_name = section['parent_section_name'] + '.' + section['final_section_name']
+            else:
+                sec_name = section['final_section_name']
+            outmap_section_list.append(sec_name)
     final_section_list = list(set(outmap_section_list).intersection(available_section))
     return final_section_list
 
+def match_nodeip(sys_map, known_nodes):
+    node = 'UNKNOWN'
+    found = False
+    host = ''
 
-def parseAllStatsCinfo(filepath, parsedOutput, force = False):
+    uname_host = ''
+    if 'uname' in sys_map:
+        uname_host = sys_map['uname']['nodename']
+    for ip in known_nodes:
+        if uname_host in ip:
+            host = ip
+            found = True
+            
+    if not found and 'hostname' in sys_map:
+        sys_hosts = sys_map['hostname']['hosts']
+        for sys_host in sys_hosts:
+            for ip in known_nodes:
+                if sys_host in ip:
+                    host = ip
+                    found = True
+    if found is True:
+        node = host
+    return node 
+
+def parseAllStatsCinfo(filepaths, parsedOutput, force = False):
+    outmap = {}
+    timestamp = ''
+    for filepath in filepaths:
+        if timestamp == '':
+            timestamp = cinfo_parser.get_timestamp_from_file(filepath)
+        cinfo_parser.extract_validate_filter_section_from_file(filepath, outmap, force)
+        
+    as_map = {}
+    as_section_list = getSectionListForParsing(outmap, AS_SECTION_NAME_LIST)
+    section_parser.parseAsSection(as_section_list, outmap, as_map)
+    
+    sys_map = {}
+    sys_section_list = getSectionListForParsing(outmap, SYS_SECTION_NAME_LIST)
+    section_parser.parseSysSection(sys_section_list, outmap, sys_map)
+    
+    cluster_name = section_parser.getClusterName(as_map)
+    if cluster_name is None:
+        cluster_name = 'null'
+    
+    if timestamp not in parsedOutput:
+        parsedOutput[timestamp] = {}
+        parsedOutput[timestamp][cluster_name] = {}
+    
+    nodemap = parsedOutput[timestamp][cluster_name]
+    # Insert as_stat
+    for nodeid in as_map:
+        nodemap[nodeid] = {}
+        nodemap[nodeid]['as_stat'] = as_map[nodeid]
+    
+    # Insert sys_stat
+    nodes = nodemap.keys()
+    node = match_nodeip(sys_map, nodes)
+    if node in nodemap:
+        nodemap[node]['sys_stat'] = sys_map
+    else:
+        nodemap[node] = {}
+        nodemap[node]['sys_stat'] = sys_map
+
+def parseAllStatsCinfoOld(filepath, parsedOutput, force = False):
     parseAllAsStatsCinfo(filepath, parsedOutput, force)
     parseAllSysStatsCinfo(filepath, parsedOutput, force)
 
@@ -31,10 +99,10 @@ def parseAllAsStatsCinfo(filepath, parsedOutput, force = False):
     outmap = {}
     cinfo_parser.extract_validate_filter_section_from_file(filepath, outmap, force)
 
-    section_filter_list = getSectionListForParsing(outmap, AS_SECTION_NAME_LIST)
+    section_list = getSectionListForParsing(outmap, AS_SECTION_NAME_LIST)
 
-    logging.info("Parsing sections: " + str(section_filter_list))
-    section_parser.parseAsSection(section_filter_list, outmap, parsedOutput)
+    logging.info("Parsing sections: " + str(section_list))
+    section_parser.parseAsSection(section_list, outmap, parsedOutput)
 
 
 
@@ -43,10 +111,10 @@ def parseAllSysStatsCinfo(filepath, parsedOutput, force = False):
     logging.info("Parsing All sys stat sections.")
     outmap = {}
     cinfo_parser.extract_validate_filter_section_from_file(filepath, outmap, force)
-    section_filter_list = getSectionListForParsing(outmap, SYS_SECTION_NAME_LIST)
+    section_list = getSectionListForParsing(outmap, SYS_SECTION_NAME_LIST)
 
-    logging.info("Parsing sections: " + str(section_filter_list))
-    section_parser.parseSysSection(section_filter_list, outmap, parsedOutput)
+    logging.info("Parsing sections: " + str(section_list))
+    section_parser.parseSysSection(section_list, outmap, parsedOutput)
 
 
 
@@ -78,3 +146,15 @@ def parseSysStatsLiveCmd(cmdName, cmdOutput, parsedOutput):
     sectionList.append(cmdName)
     section_parser.parseSysSection(sectionList, outmap, parsedOutput)
 
+
+def test():
+    parsedOutput = {}
+    dir = '/tmp/tmp/collectInfo_20170202_100252'
+    #filepaths = [dir + '/20170202_100252_aerospike.conf', dir + '/20170202_100252_ascollectinfo.log', dir + '/20170202_100252_sysinfo.log']
+    parseAllStatsCinfo([dir + '/20170202_100252_aerospike.conf'], parsedOutput)
+    print(parsedOutput)
+    parseAllStatsCinfo([dir + '/20170202_100252_ascollectinfo.log'], parsedOutput)
+    print(parsedOutput)    
+    parseAllStatsCinfo([dir + '/20170202_100252_sysinfo.log'], parsedOutput)
+    print(parsedOutput)
+    

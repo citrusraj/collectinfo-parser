@@ -55,7 +55,7 @@ FILTER_LIST = {
     'ID_6': {
         'enable': True,
         'raw_section_name': 'config_xdr',
-        'final_section_name': 'config_xdr',
+        'final_section_name': 'xdr',
         'parent_section_name': 'config',
         'regex_new': "\['config', 'xdr'\]"
         # 'parser_func'
@@ -63,7 +63,7 @@ FILTER_LIST = {
     'ID_7': {
         'enable': True,
         'raw_section_name': 'config_dc',
-        'final_section_name': 'config_dc',
+        'final_section_name': 'dc',
         'parent_section_name': 'config',
         'regex_new': "\['config', 'dc'\]"
     },
@@ -100,7 +100,7 @@ FILTER_LIST = {
     'ID_12': {
         'enable': True,
         'raw_section_name': 'statistics_xdr',
-        'final_section_name': 'stats_xdr',
+        'final_section_name': 'xdr',
         'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'xdr'\]",
         # 'parser_func'
@@ -108,7 +108,7 @@ FILTER_LIST = {
     'ID_13': {
         'enable': True,
         'raw_section_name': 'statistics_dc',
-        'final_section_name': 'stats_dc',
+        'final_section_name': 'dc',
         'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'dc'\]",
         # 'parser_func'
@@ -119,7 +119,7 @@ FILTER_LIST = {
     'ID_14': {
         'enable': True,
         'raw_section_name': 'statistics_sindex',
-        'final_section_name': 'stats_sindex',
+        'final_section_name': 'sindex',
         'parent_section_name': 'statistics',
         'regex_new': "\['statistics', 'sindex'\]",
         # 'parser_func'
@@ -696,6 +696,13 @@ FILTER_LIST = {
         'raw_section_name': 'hist-dump:objsz',
         'regex_new': "hist-dump:ns=.*;hist=objsz"
     # 'parser_func'
+    },
+    # SUD: need to be added in dev code
+    'ID_100': {
+        'enable': True,
+        'raw_section_name': 'scheduler_info',
+        'regex_new': 'ls /sys/block/{sd[*],xvd[*]}/queue/scheduler [|]xargs -I f sh -c "echo f; cat f;"'
+        # 'parser_func'
     }
 #{
 #    'enable': True,
@@ -706,6 +713,8 @@ FILTER_LIST = {
 }
 
 SKIP_LIST = ['hist-dump', 'dump-wb-summary']
-AS_SECTION_NAME_LIST = ['statistics', 'stats_dc', 'stats_xdr', 'config', 'config_dc', 'config_xdr', 'latency', 'sindex_info', 'features']
-SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'awsdata', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
+# xdr, dc are different component, so pass them separately to parse.
+# Namespace, sindex, set, bin are basic part so they will be parsed automatically.
+AS_SECTION_NAME_LIST = ['statistics', 'statistics.dc', 'statistics.xdr', 'config', 'config.dc', 'config.xdr', 'latency', 'sindex_info', 'features']
+SYS_SECTION_NAME_LIST = ['top', 'lsb', 'uname', 'meminfo', 'hostname', 'df', 'free-m', 'iostat', 'interrupts', 'ip_addr']
 DERIVED_SECTION_LIST = ['features']
