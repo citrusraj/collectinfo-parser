@@ -1460,9 +1460,9 @@ def parseLSBReleaseSection(content, parsedOutput):
             # core-4.0-noarch:graphics-4.0-amd64:graphics-4.0-noarch:printing-4.0-amd64:
             # printing-4.0-noarch\n"
             # "Description:\tCentOS release 6.4 (Final)\n"
-            matchobj = re.match(r'Description:\t(.*?)\n', line)
+            matchobj = re.match(r'Description:\t(.*)', line)
             if matchobj:
-                lsbdata['description'] = matchobj.group(1)
+                lsbdata['description'] = matchobj.group(1).strip()
                 break
             # "['lsb_release -a']\n"
             # "['ls /etc|grep release|xargs -I f cat /etc/f']\n"
@@ -1470,11 +1470,11 @@ def parseLSBReleaseSection(content, parsedOutput):
             # "Red Hat Enterprise Linux Server release 6.7 (Santiago)\n"
             # "CentOS release 6.7 (Final)\n"
             if re.search('.* release [0-9]+', line):
-                lsbdata['description'] = line.split('\n')[0]
+                lsbdata['description'] = line.strip()
                 break
             # Few formats have only PRETTY_NAME, so need to add this condition.
             # "PRETTY_NAME=\"Ubuntu 14.04.2 LTS\"\n"
-            matchobj = re.match(r'PRETTY_NAME=\"(.*?)\"\n', line)
+            matchobj = re.match(r'PRETTY_NAME=\"(.*)\"', line)
             if matchobj:
                 lsbdata['description'] = matchobj.group(1)
                 break
